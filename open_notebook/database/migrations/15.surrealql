@@ -1,0 +1,17 @@
+DEFINE TABLE IF NOT EXISTS kg_entity SCHEMAFULL;
+
+DEFINE FIELD IF NOT EXISTS name ON TABLE kg_entity TYPE string;
+DEFINE FIELD IF NOT EXISTS type ON TABLE kg_entity TYPE string;
+DEFINE FIELD IF NOT EXISTS description ON TABLE kg_entity TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS source_id ON TABLE kg_entity TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE kg_entity DEFAULT time::now() VALUE $before OR time::now();
+DEFINE FIELD IF NOT EXISTS updated ON TABLE kg_entity DEFAULT time::now() VALUE time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_kg_entity_name ON TABLE kg_entity COLUMNS name SEARCH ANALYZER my_analyzer BM25;
+
+DEFINE TABLE IF NOT EXISTS kg_relation SCHEMAFULL TYPE RELATION FROM kg_entity TO kg_entity;
+
+DEFINE FIELD IF NOT EXISTS type ON TABLE kg_relation TYPE string;
+DEFINE FIELD IF NOT EXISTS description ON TABLE kg_relation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS source_id ON TABLE kg_relation TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS created ON TABLE kg_relation DEFAULT time::now() VALUE $before OR time::now();
