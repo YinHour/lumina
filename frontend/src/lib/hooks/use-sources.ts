@@ -123,6 +123,11 @@ export function useCreateSource() {
         refetchType: 'active'
       })
 
+      // Dispatch custom event for components not using React Query (e.g. SourcesPage)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sourcesUpdated'))
+      }
+
       // Show different messages based on processing mode
       if (variables.async_processing) {
         toast({
@@ -158,6 +163,11 @@ export function useUpdateSource() {
       // Invalidate ALL sources queries (both general and notebook-specific)
       queryClient.invalidateQueries({ queryKey: ['sources'] })
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
+      
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sourcesUpdated'))
+      }
+
       toast({
         title: t.common.success,
         description: t.sources.sourceUpdatedSuccess,
@@ -185,6 +195,11 @@ export function useDeleteSource() {
       queryClient.invalidateQueries({ queryKey: ['sources'] })
       // Also invalidate the specific source
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.source(id) })
+      
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sourcesUpdated'))
+      }
+
       toast({
         title: t.common.success,
         description: t.sources.sourceDeletedSuccess,

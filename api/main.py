@@ -11,6 +11,9 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from open_notebook.utils.logger_config import setup_logging
+setup_logging()
+
 from api.auth import PasswordAuthMiddleware
 from open_notebook.exceptions import (
     AuthenticationError,

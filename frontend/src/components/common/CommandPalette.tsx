@@ -174,7 +174,7 @@ export function CommandPalette() {
         placeholder={t.searchPage.enterSearchPlaceholder}
         value={query}
         onValueChange={setQuery}
-        aria-label={t.common.search}
+        aria-label={t('common.search')}
         autoComplete="off"
       />
       <CommandList>

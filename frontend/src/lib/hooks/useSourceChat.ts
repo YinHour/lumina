@@ -145,14 +145,55 @@ export function useSourceChat(sourceId: string) {
       const decoder = new TextDecoder()
       let aiMessage: SourceChatMessage | null = null
 
+      let buffer = ''
+
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          // Process any remaining data in buffer
+          if (buffer) {
+            const lines = buffer.split('\n')
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  // Handle final data
+                  if (data.type === 'ai_message') {
+                    if (!aiMessage) {
+                      aiMessage = {
+                        id: `ai-${Date.now()}`,
+                        type: 'ai',
+                        content: data.content || '',
+                        timestamp: new Date().toISOString()
+                      }
+                      setMessages(prev => [...prev, aiMessage!])
+                    } else {
+                      aiMessage.content += data.content || ''
+                      setMessages(prev =>
+                        prev.map(msg => msg.id === aiMessage!.id
+                          ? { ...msg, content: aiMessage!.content }
+                          : msg
+                        )
+                      )
+                    }
+                  } else if (data.type === 'context_indicators') {
+                    setContextIndicators(data.data)
+                  }
+                } catch(e) {}
+              }
+            }
+          }
+          break
+        }
 
-        const text = decoder.decode(value)
-        const lines = text.split('\n')
-
-        for (const line of lines) {
+        buffer += decoder.decode(value, { stream: true })
+        
+        // Find complete lines in buffer
+        let newlineIndex
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIndex)
+          buffer = buffer.slice(newlineIndex + 1)
+          
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6))
@@ -183,7 +224,7 @@ export function useSourceChat(sourceId: string) {
               }
             } catch (e) {
               if (e instanceof SyntaxError) {
-                console.error('Error parsing SSE data:', e)
+                console.error('Error parsing SSE data:', e, 'Line:', line)
               } else {
                 throw e
               }

@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
-from open_notebook.domain.notebook import vector_search
+from open_notebook.domain.notebook import vector_search, graph_search
 from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.error_classifier import classify_error
@@ -59,7 +59,7 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
             config.get("configurable", {}).get("strategy_model"),
             "tools",
             max_tokens=2000,
-            structured=dict(type="json"),
+            streaming=True,
         )
         # model = model.bind_tools(tools)
         # First get the raw response from the model
@@ -96,14 +96,24 @@ async def trigger_queries(state: ThreadState, config: RunnableConfig):
 
 
 async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
+    import os
     try:
         payload = state
-        # if state["type"] == "text":
-        #     results = text_search(state["term"], 10, True, True)
-        # else:
-        results = await vector_search(state["term"], 10, True, True)
+        
+        # Perform vector search
+        vector_results = await vector_search(state["term"], 10, True, True)
+        
+        # Check if Knowledge Graph is enabled
+        enable_kg = os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true"
+        graph_results = []
+        if enable_kg:
+            graph_results = await graph_search(state["term"], 3)
+            
+        results = vector_results + graph_results
+
         if len(results) == 0:
             return {"answers": []}
+            
         payload["results"] = results
         ids = [r["id"] for r in results]
         payload["ids"] = ids

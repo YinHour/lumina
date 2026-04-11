@@ -215,7 +215,8 @@ async def get_sources(
             query = f"""
                 SELECT id, asset, created, title, updated, topics, command,
                 (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
+                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+                (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted
                 FROM source
                 {order_clause}
                 LIMIT $limit START $offset
@@ -268,6 +269,7 @@ async def get_sources(
                     else None,
                     embedded=row.get("embedded", False),
                     embedded_chunks=0,  # Not needed in list view
+                    kg_extracted=row.get("kg_extracted", False),
                     insights_count=row.get("insights_count", 0),
                     created=str(row["created"]),
                     updated=str(row["updated"]),
@@ -426,6 +428,7 @@ async def create_source(
                     full_text=None,  # Will be populated after processing
                     embedded=False,  # Will be updated after processing
                     embedded_chunks=0,
+                    kg_extracted=False,
                     created=str(source.created),
                     updated=str(source.updated),
                     command_id=command_id,
@@ -518,6 +521,7 @@ async def create_source(
                     )
 
                 embedded_chunks = await processed_source.get_embedded_chunks()
+                kg_extracted = await processed_source.has_knowledge_graph()
                 return SourceResponse(
                     id=processed_source.id or "",
                     title=processed_source.title,
@@ -535,6 +539,7 @@ async def create_source(
                     full_text=processed_source.full_text,
                     embedded=embedded_chunks > 0,
                     embedded_chunks=embedded_chunks,
+                    kg_extracted=kg_extracted,
                     created=str(processed_source.created),
                     updated=str(processed_source.updated),
                     # No command_id or status for sync processing (legacy behavior)
@@ -644,6 +649,7 @@ async def get_source(source_id: str):
                 status = "unknown"
 
         embedded_chunks = await source.get_embedded_chunks()
+        kg_extracted = await source.has_knowledge_graph()
 
         # Get associated notebooks
         notebooks_query = await repo_query(
@@ -667,6 +673,7 @@ async def get_source(source_id: str):
             full_text=source.full_text,
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
+            kg_extracted=kg_extracted,
             file_available=_is_source_file_available(source),
             created=str(source.created),
             updated=str(source.updated),
@@ -793,6 +800,7 @@ async def update_source(source_id: str, source_update: SourceUpdate):
         await source.save()
 
         embedded_chunks = await source.get_embedded_chunks()
+        kg_extracted = await source.has_knowledge_graph()
         return SourceResponse(
             id=source.id or "",
             title=source.title,
@@ -806,6 +814,7 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             full_text=source.full_text,
             embedded=embedded_chunks > 0,
             embedded_chunks=embedded_chunks,
+            kg_extracted=kg_extracted,
             created=str(source.created),
             updated=str(source.updated),
         )
@@ -904,6 +913,7 @@ async def retry_source_processing(source_id: str):
 
             # Get current embedded chunks count
             embedded_chunks = await source.get_embedded_chunks()
+            kg_extracted = await source.has_knowledge_graph()
 
             # Return updated source response
             return SourceResponse(
@@ -919,6 +929,7 @@ async def retry_source_processing(source_id: str):
                 full_text=source.full_text,
                 embedded=embedded_chunks > 0,
                 embedded_chunks=embedded_chunks,
+                kg_extracted=kg_extracted,
                 created=str(source.created),
                 updated=str(source.updated),
                 command_id=command_id,

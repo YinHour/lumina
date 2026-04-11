@@ -15,7 +15,7 @@ from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Source, SourceInsight
 from open_notebook.exceptions import OpenNotebookError
 from open_notebook.utils import clean_thinking_content
-from open_notebook.utils.context_builder import ContextBuilder
+from open_notebook.utils.context_builder import ContextBuilder, ContextConfig
 from open_notebook.utils.error_classifier import classify_error
 from open_notebook.utils.text_utils import extract_text_content
 
@@ -30,7 +30,7 @@ class SourceChatState(TypedDict):
     context_indicators: Optional[Dict[str, List[str]]]
 
 
-def call_model_with_source_context(
+async def call_model_with_source_context(
     state: SourceChatState, config: RunnableConfig
 ) -> dict:
     """
@@ -43,51 +43,32 @@ def call_model_with_source_context(
     4. Tracks context indicators for referenced insights/content
     """
     try:
-        return _call_model_with_source_context_inner(state, config)
+        return await _call_model_with_source_context_inner(state, config)
     except OpenNotebookError:
         raise
     except Exception as e:
         error_class, user_message = classify_error(e)
+        import traceback
+        logger.error(f"Error in source chat streaming: {str(e)}\n{traceback.format_exc()}")
         raise error_class(user_message) from e
 
 
-def _call_model_with_source_context_inner(
+async def _call_model_with_source_context_inner(
     state: SourceChatState, config: RunnableConfig
 ) -> dict:
     source_id = state.get("source_id")
     if not source_id:
         raise ValueError("source_id is required in state")
 
-    # Build source context using ContextBuilder (run async code in new loop)
-    def build_context():
-        """Build context in a new event loop"""
-        new_loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(new_loop)
-            context_builder = ContextBuilder(
-                source_id=source_id,
-                include_insights=True,
-                include_notes=False,  # Focus on source-specific content
-                max_tokens=50000,  # Reasonable limit for source context
-            )
-            return new_loop.run_until_complete(context_builder.build())
-        finally:
-            new_loop.close()
-            asyncio.set_event_loop(None)
-
-    # Get the built context
-    try:
-        # Try to get the current event loop
-        asyncio.get_running_loop()
-        # If we're in an event loop, run in a thread with a new loop
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(build_context)
-            context_data = future.result()
-    except RuntimeError:
-        # No event loop running, safe to create a new one
-        context_data = build_context()
+    # Build source context using ContextBuilder
+    context_builder = ContextBuilder(
+        source_id=source_id,
+        context_config=ContextConfig(sources={source_id: "full content"}),
+        include_insights=True,
+        include_notes=False,  # Focus on source-specific content
+        max_tokens=80000,  # Reasonable limit for source context
+    )
+    context_data = await context_builder.build()
 
     # Extract source and insights from context
     source = None
@@ -130,36 +111,21 @@ def _call_model_with_source_context_inner(
     )
     payload = [SystemMessage(content=system_prompt)] + state.get("messages", [])
 
-    # Handle async model provisioning from sync context
-    def run_in_new_loop():
-        """Run the async function in a new event loop"""
-        new_loop = asyncio.new_event_loop()
-        try:
-            asyncio.set_event_loop(new_loop)
-            return new_loop.run_until_complete(
-                provision_langchain_model(
-                    str(payload),
-                    config.get("configurable", {}).get("model_id")
-                    or state.get("model_override"),
-                    "chat",
-                    max_tokens=8192,
-                )
-            )
-        finally:
-            new_loop.close()
-            asyncio.set_event_loop(None)
-
+    # Replace async run since we might be inside a stream
+    # Actually, we don't stream here - we await graph.invoke/astream
+    # Let's clean that up
     try:
-        # Try to get the current event loop
-        asyncio.get_running_loop()
-        # If we're in an event loop, run in a thread with a new loop
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_in_new_loop)
-            model = future.result()
+        # Get the model provisioned
+        model = await provision_langchain_model(
+            str(payload),
+            config.get("configurable", {}).get("model_id")
+            or state.get("model_override"),
+            "chat",
+            max_tokens=8192,
+            streaming=True, # Enable streaming explicitly
+        )
     except RuntimeError:
-        # No event loop running, safe to use asyncio.run()
+        # Fallback to run if not in a running loop
         model = asyncio.run(
             provision_langchain_model(
                 str(payload),
@@ -167,10 +133,16 @@ def _call_model_with_source_context_inner(
                 or state.get("model_override"),
                 "chat",
                 max_tokens=8192,
+                streaming=True, # Enable streaming explicitly
             )
         )
 
-    ai_message = model.invoke(payload)
+    # Note: We pass the config so that callbacks (including streaming callbacks) are propagated
+    # Since we are using astream_events on the graph, the model must be invoked asynchronously
+    # Using ainvoke directly
+    # Note: When called inside astream_events from outside, the stream chunks are actually 
+    # intercepted and yielded automatically by LangChain regardless of whether ainvoke or astream is used internally.
+    ai_message = await model.ainvoke(payload, config=config)
 
     # Clean thinking content from AI response (e.g., <think>...</think> tags)
     content = extract_text_content(ai_message.content)
@@ -209,8 +181,8 @@ def _format_source_context(context_data: Dict) -> str:
                 if source.get("full_text"):
                     # Truncate full text if too long
                     full_text = source["full_text"]
-                    if len(full_text) > 5000:
-                        full_text = full_text[:5000] + "...\n[Content truncated]"
+                    if len(full_text) > 50000:
+                        full_text = full_text[:50000] + "...\n[Content truncated]"
                     context_parts.append(f"**Content:**\n{full_text}")
                 context_parts.append("")  # Empty line for separation
 

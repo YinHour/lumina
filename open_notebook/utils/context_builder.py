@@ -117,7 +117,17 @@ class ContextBuilder:
 
             # Build context based on parameters
             if self.source_id:
-                await self._add_source_context(self.source_id)
+                inclusion_level = "insights"
+                if self.context_config and self.context_config.sources:
+                    # Check with and without prefix to be safe
+                    clean_id = self.source_id.replace("source:", "")
+                    if self.source_id in self.context_config.sources:
+                        inclusion_level = self.context_config.sources[self.source_id]
+                    elif clean_id in self.context_config.sources:
+                        inclusion_level = self.context_config.sources[clean_id]
+                    elif f"source:{clean_id}" in self.context_config.sources:
+                        inclusion_level = self.context_config.sources[f"source:{clean_id}"]
+                await self._add_source_context(self.source_id, inclusion_level)
 
             if self.notebook_id:
                 await self._add_notebook_context(self.notebook_id)

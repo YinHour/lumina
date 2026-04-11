@@ -28,6 +28,7 @@ export interface SourceListResponse {
   } | null
   embedded: boolean
   embedded_chunks: number            // ADD: From Python API
+  kg_extracted: boolean              // ADD: From Python API
   insights_count: number
   created: string
   updated: string

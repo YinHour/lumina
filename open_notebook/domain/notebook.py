@@ -389,6 +389,21 @@ class Source(ObjectModel):
             logger.exception(e)
             raise DatabaseOperationError(f"Failed to count chunks for source: {str(e)}")
 
+    async def has_knowledge_graph(self) -> bool:
+        try:
+            result = await repo_query(
+                """
+                select count() as entities from kg_entity where source_id=$id GROUP ALL
+                """,
+                {"id": str(self.id)},
+            )
+            if len(result) == 0:
+                return False
+            return result[0]["entities"] > 0
+        except Exception as e:
+            logger.error(f"Error checking KG for source {self.id}: {str(e)}")
+            return False
+
     async def get_insights(self) -> List[SourceInsight]:
         try:
             result = await repo_query(
@@ -444,6 +459,17 @@ class Source(ObjectModel):
                 f"Embed source job submitted for source {self.id}: "
                 f"command_id={command_id_str}"
             )
+            
+            # Submitting KG extraction if enabled
+            import os
+            enable_kg = os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true"
+            if enable_kg:
+                kg_command_id = submit_command(
+                    "open_notebook",
+                    "extract_knowledge_graph",
+                    {"source_id": str(self.id)},
+                )
+                logger.info(f"Extract KG job submitted for source {self.id}: command_id={kg_command_id}")
 
             return command_id_str
 
@@ -543,10 +569,23 @@ class Source(ObjectModel):
                 "DELETE source_insight WHERE source = $source_id",
                 {"source_id": source_id},
             )
-            logger.debug(f"Deleted embeddings and insights for source {self.id}")
+            
+            # Delete associated knowledge graph entities and relations
+            import os
+            if os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true":
+                await repo_query(
+                    "DELETE kg_entity WHERE source_id = $source_id_str",
+                    {"source_id_str": str(self.id)},
+                )
+                await repo_query(
+                    "DELETE kg_relation WHERE source_id = $source_id_str",
+                    {"source_id_str": str(self.id)},
+                )
+                
+            logger.debug(f"Deleted embeddings, insights, and KG data for source {self.id}")
         except Exception as e:
             logger.warning(
-                f"Failed to delete embeddings/insights for source {self.id}: {e}. "
+                f"Failed to delete associated data for source {self.id}: {e}. "
                 "Continuing with source deletion."
             )
 
@@ -645,6 +684,93 @@ async def text_search(
         logger.error(f"Error performing text search: {str(e)}")
         logger.exception(e)
         raise DatabaseOperationError(e)
+
+
+async def graph_search(keyword: str, results: int = 5):
+    """
+    Perform a hybrid Graph RAG search:
+    1. Find entry entities via BM25 text search on name.
+    2. Expand their relationships (1-hop) to gather subgraph context.
+    """
+    if not keyword:
+        raise InvalidInputError("Search keyword cannot be empty")
+    try:
+        # Step 1: Find entry points
+        entry_nodes = await repo_query(
+            """
+            SELECT id, name, type, description, math::max(search::score(1)) AS relevance
+            FROM kg_entity
+            WHERE name @1@ $keyword OR description @1@ $keyword
+            GROUP BY id, name, type, description
+            ORDER BY relevance DESC
+            LIMIT $limit
+            """,
+            {"keyword": keyword, "limit": results},
+        )
+        
+        if not entry_nodes:
+            return []
+
+        entry_ids = [node["id"] for node in entry_nodes]
+
+        # Step 2: Expand the subgraph (1-hop traversal)
+        subgraphs = await repo_query(
+            """
+            SELECT 
+                id, 
+                name, 
+                type, 
+                description,
+                ->kg_relation->kg_entity.{id, name, type, description} AS outbound_nodes,
+                ->kg_relation.{type, description} AS outbound_edges,
+                <-kg_relation<-kg_entity.{id, name, type, description} AS inbound_nodes,
+                <-kg_relation.{type, description} AS inbound_edges
+            FROM $entry_ids
+            """,
+            {"entry_ids": entry_ids}
+        )
+
+        # Format the result into a clean text/structure for the LLM
+        formatted_results = []
+        for sg in subgraphs:
+            context = f"Entity: [{sg.get('type', 'UNKNOWN')}] {sg.get('name', 'Unnamed')}"
+            if sg.get('description'):
+                context += f" (Details: {sg['description']})"
+            context += "\nRelationships:\n"
+            
+            # Outbound
+            out_edges = sg.get("outbound_edges", [])
+            out_nodes = sg.get("outbound_nodes", [])
+            for edge, node in zip(out_edges, out_nodes):
+                edge_desc = f" ({edge.get('description')})" if edge and edge.get('description') else ""
+                edge_type = edge.get('type', 'RELATES_TO') if edge else 'RELATES_TO'
+                node_name = node.get('name', 'Unnamed') if node else 'Unnamed'
+                node_type = node.get('type', 'UNKNOWN') if node else 'UNKNOWN'
+                context += f"  - [{edge_type}]{edge_desc} -> [{node_type}] {node_name}\n"
+                
+            # Inbound
+            in_edges = sg.get("inbound_edges", [])
+            in_nodes = sg.get("inbound_nodes", [])
+            for edge, node in zip(in_edges, in_nodes):
+                edge_desc = f" ({edge.get('description')})" if edge and edge.get('description') else ""
+                edge_type = edge.get('type', 'RELATES_TO') if edge else 'RELATES_TO'
+                node_name = node.get('name', 'Unnamed') if node else 'Unnamed'
+                node_type = node.get('type', 'UNKNOWN') if node else 'UNKNOWN'
+                context += f"  - <- [{edge_type}]{edge_desc} - [{node_type}] {node_name}\n"
+                
+            formatted_results.append({
+                "id": sg["id"],
+                "title": f"Knowledge Graph Context for: {sg.get('name', '')}",
+                "content": context,
+                "type": "kg_subgraph"
+            })
+            
+        return formatted_results
+
+    except Exception as e:
+        logger.error(f"Error performing graph search: {str(e)}")
+        logger.exception(e)
+        return []
 
 
 async def vector_search(

@@ -47,16 +47,40 @@ export const chatApi = {
     await apiClient.delete(`/chat/sessions/${sessionId}`)
   },
 
-  // Messaging (synchronous, no streaming)
+  // Messaging with streaming
   sendMessage: async (data: SendNotebookChatMessageRequest) => {
-    const response = await apiClient.post<{
-      session_id: string
-      messages: NotebookChatMessage[]
-    }>(
-      `/chat/execute`,
-      data
-    )
-    return response.data
+    let token = null
+    if (typeof window !== 'undefined') {
+      const authStorage = localStorage.getItem('auth-storage')
+      if (authStorage) {
+        try {
+          const { state } = JSON.parse(authStorage)
+          if (state?.token) {
+            token = state.token
+          }
+        } catch (error) {
+          console.error('Error parsing auth storage:', error)
+        }
+      }
+    }
+
+    const { getApiUrl } = await import('@/lib/config')
+    const baseUrl = await getApiUrl()
+    const url = `${baseUrl}/api/chat/execute`
+
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { 'Authorization': `Bearer ${token}` })
+      },
+      body: JSON.stringify(data)
+    }).then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return response.body
+    })
   },
 
   buildContext: async (data: BuildContextRequest) => {

@@ -171,7 +171,7 @@ export default function SearchPage() {
               </TabsTrigger>
               <TabsTrigger value="search">
                 <Search className="h-4 w-4" />
-                {t.searchPage.search}
+                {t('searchPage.search')}
               </TabsTrigger>
             </TabsList>
           </div>
@@ -311,7 +311,7 @@ export default function SearchPage() {
           <TabsContent value="search" className="mt-6">
             <Card>
               <CardHeader>
-                <CardTitle className="text-lg">{t.searchPage.search}</CardTitle>
+                <CardTitle className="text-lg">{t('searchPage.search')}</CardTitle>
                 <p className="text-sm text-muted-foreground">
                   {t.searchPage.searchDesc}
                 </p>
@@ -320,7 +320,7 @@ export default function SearchPage() {
                 {/* Search Input */}
                 <div className="space-y-2">
                   <Label htmlFor="search-query" className="sr-only">
-                    {t.searchPage.search}
+                    {t('searchPage.search')}
                   </Label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <Input
@@ -346,7 +346,7 @@ export default function SearchPage() {
                       ) : (
                         <Search className="h-4 w-4 mr-2" />
                       )}
-                      {t.searchPage.search}
+                      {t('searchPage.search')}
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">{t.searchPage.pressToSearch}</p>

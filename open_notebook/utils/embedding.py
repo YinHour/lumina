@@ -18,7 +18,7 @@ from loguru import logger
 
 from .chunking import CHUNK_SIZE, ContentType, chunk_text
 
-EMBEDDING_BATCH_SIZE = 50
+EMBEDDING_BATCH_SIZE = 10
 EMBEDDING_MAX_RETRIES = 3
 EMBEDDING_RETRY_DELAY = 2  # seconds
 
@@ -139,6 +139,11 @@ async def generate_embeddings(
             try:
                 batch_embeddings = await embedding_model.aembed(batch)
                 all_embeddings.extend(batch_embeddings)
+                
+                # Add a small delay between batches to respect rate limits
+                if batch_idx < total_batches - 1:
+                    await asyncio.sleep(0.5)
+                    
                 break
             except Exception as e:
                 cmd_context = f" (command: {command_id})" if command_id else ""

@@ -26,9 +26,9 @@ export const searchApi = {
       }
     }
 
-    // Use relative URL to leverage Next.js rewrites
-    // This works both in dev (Next.js proxy) and production (Docker network)
-    const url = '/api/search/ask'
+    const { getApiUrl } = await import('@/lib/config')
+    const baseUrl = await getApiUrl()
+    const url = `${baseUrl}/api/search/ask`
 
     // Use fetch with ReadableStream for SSE
     const response = await fetch(url, {

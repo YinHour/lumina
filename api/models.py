@@ -338,6 +338,7 @@ class SourceResponse(BaseModel):
     full_text: Optional[str]
     embedded: bool
     embedded_chunks: int
+    kg_extracted: bool = False
     file_available: Optional[bool] = None
     created: str
     updated: str
@@ -356,6 +357,7 @@ class SourceListResponse(BaseModel):
     asset: Optional[AssetModel]
     embedded: bool  # Boolean flag indicating if source has embeddings
     embedded_chunks: int  # Number of embedded chunks
+    kg_extracted: bool = False # Boolean flag indicating if source has knowledge graph extracted
     insights_count: int
     created: str
     updated: str

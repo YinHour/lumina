@@ -31,7 +31,7 @@ export const frFR = {
     podcast: "Podcast",
     quickActions: "Actions rapides",
     quickActionsDesc: "Navigation, recherche, poser une question, thème",
-    appName: "Open Notebook",
+    appName: "Lumina™ | Yinshi AI",
     add: "Ajouter",
     remove: "Retirer",
     confirm: "Confirmer",
@@ -190,7 +190,7 @@ export const frFR = {
     localDevLabel: "Pour le développement local",
   },
   auth: {
-    loginTitle: "Open Notebook",
+    loginTitle: "Lumina™ | Yinshi AI",
     loginDesc: "Entrez votre mot de passe pour accéder à l'application",
     passwordPlaceholder: "Mot de passe",
     signingIn: "Connexion...",

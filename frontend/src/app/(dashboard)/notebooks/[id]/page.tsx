@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { use, useState, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import { AppShell } from '@/components/layout/AppShell'
 import { NotebookHeader } from '../components/NotebookHeader'
@@ -25,12 +25,12 @@ export interface ContextSelections {
   notes: Record<string, ContextMode>
 }
 
-export default function NotebookPage() {
+export default function NotebookPage({ params }: { params: Promise<{ id: string }> }) {
   const { t } = useTranslation()
-  const params = useParams()
+  const resolvedParams = use(params)
 
   // Ensure the notebook ID is properly decoded from URL
-  const notebookId = params?.id ? decodeURIComponent(params.id as string) : ''
+  const notebookId = resolvedParams?.id ? decodeURIComponent(resolvedParams.id) : ''
 
   const { data: notebook, isLoading: notebookLoading } = useNotebook(notebookId)
   const {

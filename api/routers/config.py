@@ -43,60 +43,9 @@ def get_version() -> str:
 async def get_latest_version_cached(current_version: str) -> tuple[Optional[str], bool]:
     """
     Check for the latest version from GitHub with caching.
-
-    Returns:
-        tuple: (latest_version, has_update)
-        - latest_version: str or None if check failed
-        - has_update: bool indicating if update is available
+    (Disabled to prevent update notifications)
     """
-    global _version_cache
-
-    # Check if cache is still valid (within TTL)
-    cache_age = time.time() - _version_cache["timestamp"]
-    if _version_cache["timestamp"] > 0 and cache_age < VERSION_CACHE_TTL:
-        logger.debug(f"Using cached version check result (age: {cache_age:.0f}s)")
-        return _version_cache["latest_version"], _version_cache["has_update"]
-
-    # Cache expired or not yet set
-    if _version_cache["timestamp"] > 0:
-        logger.info(f"Version cache expired (age: {cache_age:.0f}s), refreshing...")
-
-    # Perform version check with strict error handling
-    try:
-        logger.info("Checking for latest version from GitHub...")
-
-        # Fetch latest version from GitHub with 10-second timeout
-        latest_version = await get_version_from_github_async(
-            "https://github.com/lfnovo/open-notebook", "main"
-        )
-
-        logger.info(
-            f"Latest version from GitHub: {latest_version}, Current version: {current_version}"
-        )
-
-        # Compare versions
-        has_update = compare_versions(current_version, latest_version) < 0
-
-        # Cache the result
-        _version_cache["latest_version"] = latest_version
-        _version_cache["has_update"] = has_update
-        _version_cache["timestamp"] = time.time()
-        _version_cache["check_failed"] = False
-
-        logger.info(f"Version check complete. Update available: {has_update}")
-
-        return latest_version, has_update
-
-    except Exception as e:
-        logger.warning(f"Version check failed: {e}")
-
-        # Cache the failure to avoid repeated attempts
-        _version_cache["latest_version"] = None
-        _version_cache["has_update"] = False
-        _version_cache["timestamp"] = time.time()
-        _version_cache["check_failed"] = True
-
-        return None, False
+    return None, False
 
 
 async def check_database_health() -> dict:

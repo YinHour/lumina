@@ -90,6 +90,78 @@ export default function SourcesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortBy, sortOrder])
 
+  // Listen for sourcesUpdated event to refresh instantly
+  useEffect(() => {
+    const handleSourcesUpdated = () => {
+      fetchSources(true)
+    }
+    window.addEventListener('sourcesUpdated', handleSourcesUpdated)
+    return () => window.removeEventListener('sourcesUpdated', handleSourcesUpdated)
+  }, [fetchSources])
+
+  // Polling for status updates
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+
+    const pollSources = async () => {
+      // Avoid polling if already loading or loading more
+      if (loading || loadingMoreRef.current) return
+
+      try {
+        const data = await sourcesApi.list({
+          limit: PAGE_SIZE,
+          offset: 0,
+          sort_by: sortBy,
+          sort_order: sortOrder,
+        })
+        
+        setSources(prev => {
+          const newSources = [...prev]
+          data.forEach(updatedSource => {
+            const index = newSources.findIndex(s => s.id === updatedSource.id)
+            if (index !== -1) {
+              // Update existing source
+              newSources[index] = updatedSource
+            } else {
+              // It's a new source, add it if we are at the top (offsetRef is low or we just insert it)
+              // Actually, better to just let fetchSources(true) handle full refresh if we detect a totally new item
+              // But for simplicity, we can insert it if it belongs on the first page
+              if (sortBy === 'created' && sortOrder === 'desc') {
+                 // Push to front
+                 newSources.unshift(updatedSource)
+              } else if (sortBy === 'updated' && sortOrder === 'desc') {
+                 // Push to front
+                 newSources.unshift(updatedSource)
+              }
+            }
+          })
+          
+          // Deduplicate just in case
+          const uniqueIds = new Set()
+          const finalSources = newSources.filter(s => {
+            if (uniqueIds.has(s.id)) return false
+            uniqueIds.add(s.id)
+            return true
+          })
+
+          // Sort finalSources to maintain order
+          finalSources.sort((a, b) => {
+             const timeA = new Date(a[sortBy]).getTime()
+             const timeB = new Date(b[sortBy]).getTime()
+             return sortOrder === 'desc' ? timeB - timeA : timeA - timeB
+          })
+
+          return finalSources
+        })
+      } catch (err) {
+        console.error('Failed to poll sources:', err)
+      }
+    }
+
+    interval = setInterval(pollSources, 5000)
+    return () => clearInterval(interval)
+  }, [sortBy, sortOrder, loading])
+
   useEffect(() => {
     // Focus the table when component mounts or sources change
     if (sources.length > 0 && tableRef.current) {
@@ -340,6 +412,9 @@ export default function SourcesPage() {
                 <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
                   {t.sources.embedded}
                 </th>
+                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
+                  {t.sources.kgExtracted || "已抽取图谱"}
+                </th>
                 <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
                   {t.common.actions}
                 </th>
@@ -392,6 +467,11 @@ export default function SourcesPage() {
                       {source.embedded ? t.sources.yes : t.sources.no}
                     </Badge>
                   </td>
+                  <td className="h-12 px-4 text-center hidden lg:table-cell">
+                    <Badge variant={source.kg_extracted ? "default" : "secondary"} className="text-xs">
+                      {source.kg_extracted ? t.sources.yes : t.sources.no}
+                    </Badge>
+                  </td>
                   <td className="h-12 px-4 text-right">
                     <Button
                       variant="ghost"
@@ -406,7 +486,7 @@ export default function SourcesPage() {
               ))}
               {loadingMore && (
                 <tr>
-                  <td colSpan={6} className="h-16 text-center">
+                  <td colSpan={7} className="h-16 text-center">
                     <div className="flex items-center justify-center">
                       <LoadingSpinner />
                       <span className="ml-2 text-muted-foreground">{t.sources.loadingMore}</span>

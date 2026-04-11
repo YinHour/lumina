@@ -327,9 +327,150 @@ async def delete_session(session_id: str):
         raise HTTPException(status_code=500, detail=f"Error deleting session: {str(e)}")
 
 
-@router.post("/chat/execute", response_model=ExecuteChatResponse)
+async def stream_chat_response(
+    session_id: str, message: str, context: dict, model_override: Optional[str] = None
+):
+    import json
+    from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    from open_notebook.graphs.chat import agent_state
+    
+    try:
+        # Get current state via sync thread
+        current_state = await asyncio.to_thread(
+            chat_graph.get_state,
+            config=RunnableConfig(configurable={"thread_id": session_id}),
+        )
+
+        state_values = current_state.values if current_state else {}
+        state_values["messages"] = state_values.get("messages", [])
+        state_values["context"] = context
+        state_values["model_override"] = model_override
+
+        from langchain_core.messages import HumanMessage
+        user_message = HumanMessage(content=message)
+        state_values["messages"].append(user_message)
+
+        user_event = {"type": "user_message", "content": message, "timestamp": None}
+        yield f"data: {json.dumps(user_event)}\n\n"
+
+        config = RunnableConfig(
+            configurable={"thread_id": session_id, "model_id": model_override}
+        )
+        
+        yielded_ai_chunks = False
+            
+        async with AsyncSqliteSaver.from_conn_string(LANGGRAPH_CHECKPOINT_FILE) as saver:
+            async_graph = agent_state.compile(checkpointer=saver)
+            
+            async for event in async_graph.astream_events(
+                input=state_values, config=config, version="v2"
+            ):
+                kind = event["event"]
+                
+                if kind == "on_chat_model_stream" or kind == "on_llm_stream":
+                    if "chunk" in event["data"]:
+                        chunk = event["data"]["chunk"]
+                        
+                        if hasattr(chunk, "content") and chunk.content:
+                            content = chunk.content
+                            yielded_ai_chunks = True
+                            if isinstance(content, str):
+                                ai_event = {
+                                    "type": "ai_message",
+                                    "content": content,
+                                    "timestamp": None,
+                                }
+                                yield f"data: {json.dumps(ai_event)}\n\n"
+                                await asyncio.sleep(0.001)
+                            elif isinstance(content, list):
+                                for c in content:
+                                    if isinstance(c, dict) and "text" in c:
+                                        ai_event = {
+                                            "type": "ai_message",
+                                            "content": c["text"],
+                                            "timestamp": None,
+                                        }
+                                        yield f"data: {json.dumps(ai_event)}\n\n"
+                                        await asyncio.sleep(0.001)
+                                    elif isinstance(c, str):
+                                        ai_event = {
+                                            "type": "ai_message",
+                                            "content": c,
+                                            "timestamp": None,
+                                        }
+                                        yield f"data: {json.dumps(ai_event)}\n\n"
+                                        await asyncio.sleep(0.001)
+                                        
+                        elif isinstance(chunk, str) and chunk:
+                            yielded_ai_chunks = True
+                            ai_event = {
+                                "type": "ai_message",
+                                "content": chunk,
+                                "timestamp": None,
+                            }
+                            yield f"data: {json.dumps(ai_event)}\n\n"
+                            await asyncio.sleep(0.001)
+                        elif isinstance(chunk, dict) and "content" in chunk and chunk["content"]:
+                            yielded_ai_chunks = True
+                            ai_event = {
+                                "type": "ai_message",
+                                "content": chunk["content"],
+                                "timestamp": None,
+                            }
+                            yield f"data: {json.dumps(ai_event)}\n\n"
+                            await asyncio.sleep(0.001)
+                            
+                elif kind == "on_chat_model_end":
+                    if "output" in event["data"] and "content" in event["data"]["output"]:
+                        if not yielded_ai_chunks:
+                            yielded_ai_chunks = True
+                            content = event["data"]["output"]["content"]
+                            if isinstance(content, str):
+                                chunk_size = 50
+                                for i in range(0, len(content), chunk_size):
+                                    ai_event = {
+                                        "type": "ai_message",
+                                        "content": content[i:i+chunk_size],
+                                        "timestamp": None,
+                                    }
+                                    yield f"data: {json.dumps(ai_event)}\n\n"
+                                    await asyncio.sleep(0.01)
+                                    
+                elif kind == "on_chain_end" and event["name"] == "LangGraph":
+                    final_state = event["data"]["output"]
+                    if isinstance(final_state, dict) and "agent" in final_state:
+                        if not yielded_ai_chunks and "messages" in final_state["agent"]:
+                            msg = final_state["agent"]["messages"]
+                            if hasattr(msg, "content"):
+                                content_text = msg.content
+                                if content_text:
+                                    chunk_size = 50
+                                    for i in range(0, len(content_text), chunk_size):
+                                        ai_event = {
+                                            "type": "ai_message",
+                                            "content": content_text[i:i+chunk_size],
+                                            "timestamp": None,
+                                        }
+                                        yield f"data: {json.dumps(ai_event)}\n\n"
+                                        await asyncio.sleep(0.01)
+
+        completion_event = {"type": "complete"}
+        yield f"data: {json.dumps(completion_event)}\n\n"
+
+    except Exception as e:
+        from open_notebook.utils.error_classifier import classify_error
+        import traceback
+        _, user_message = classify_error(e)
+        logger.error(f"Error in chat streaming: {str(e)}\n{traceback.format_exc()}")
+        error_event = {"type": "error", "message": user_message}
+        yield f"data: {json.dumps(error_event)}\n\n"
+
+from fastapi.responses import StreamingResponse
+
+@router.post("/chat/execute")
 async def execute_chat(request: ExecuteChatRequest):
-    """Execute a chat request and get AI response."""
+    """Execute a chat request and get AI response with SSE streaming."""
     try:
         # Verify session exists
         # Ensure session_id has proper table prefix
@@ -349,63 +490,30 @@ async def execute_chat(request: ExecuteChatRequest):
             else getattr(session, "model_override", None)
         )
 
-        # Get current state
-        # Use sync get_state() in a thread since SqliteSaver doesn't support async
-        current_state = await asyncio.to_thread(
-            chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": full_session_id}),
-        )
-
-        # Prepare state for execution
-        state_values = current_state.values if current_state else {}
-        state_values["messages"] = state_values.get("messages", [])
-        state_values["context"] = request.context
-        state_values["model_override"] = model_override
-
-        # Add user message to state
-        from langchain_core.messages import HumanMessage
-
-        user_message = HumanMessage(content=request.message)
-        state_values["messages"].append(user_message)
-
-        # Execute chat graph
-        result = chat_graph.invoke(
-            input=state_values,  # type: ignore[arg-type]
-            config=RunnableConfig(
-                configurable={
-                    "thread_id": full_session_id,
-                    "model_id": model_override,
-                }
-            ),
-        )
-
         # Update session timestamp
         await session.save()
 
-        # Convert messages to response format
-        messages: list[ChatMessage] = []
-        for msg in result.get("messages", []):
-            messages.append(
-                ChatMessage(
-                    id=getattr(msg, "id", f"msg_{len(messages)}"),
-                    type=msg.type if hasattr(msg, "type") else "unknown",
-                    content=msg.content if hasattr(msg, "content") else str(msg),
-                    timestamp=None,
-                )
-            )
-
-        return ExecuteChatResponse(session_id=request.session_id, messages=messages)
-    except NotFoundError:
-        raise HTTPException(status_code=404, detail="Session not found")
-    except Exception as e:
-        # Log detailed error with context for debugging
-        logger.error(
-            f"Error executing chat: {str(e)}\n"
-            f"  Session ID: {request.session_id}\n"
-            f"  Model override: {request.model_override}\n"
-            f"  Traceback:\n{traceback.format_exc()}"
+        # Return streaming response
+        return StreamingResponse(
+            stream_chat_response(
+                session_id=full_session_id,
+                message=request.message,
+                context=request.context,
+                model_override=model_override,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Tells Nginx/proxies not to buffer
+            },
         )
-        raise HTTPException(status_code=500, detail=f"Error executing chat: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending message to chat: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error sending message: {str(e)}")
 
 
 @router.post("/chat/context", response_model=BuildContextResponse)

@@ -68,14 +68,22 @@ async def content_process(state: SourceState) -> dict:
             if stt_model:
                 content_state["audio_provider"] = stt_model.provider
                 content_state["audio_model"] = stt_model.name
-                logger.debug(
+                logger.info(
                     f"Using speech-to-text model: {stt_model.provider}/{stt_model.name}"
                 )
     except Exception as e:
         logger.warning(f"Failed to retrieve speech-to-text model configuration: {e}")
         # Continue without custom audio model (content-core will use its default)
 
-    processed_state = await extract_content(content_state)
+    logger.info(f"Starting content extraction for source_id={state.get('source_id')}")
+    logger.info(f"Engine doc: {content_state.get('document_engine')}, URL: {content_state.get('url_engine')}")
+    try:
+        processed_state = await extract_content(content_state)
+        logger.info(f"Content extraction completed for source_id={state.get('source_id')}")
+        logger.debug(f"Extracted content length: {len(processed_state.content or '')} characters")
+    except Exception as e:
+        logger.error(f"Error during content extraction for source_id={state.get('source_id')}: {e}")
+        raise
 
     if not processed_state.content or not processed_state.content.strip():
         url = processed_state.url or ""

@@ -98,8 +98,16 @@ export function useAsk() {
                 setState(prev => ({
                   ...prev,
                   strategy: {
-                    reasoning: data.reasoning || '',
+                    reasoning: data.reasoning || prev.strategy?.reasoning || '',
                     searches: data.searches || []
+                  }
+                }))
+              } else if (data.type === 'strategy_reasoning_chunk') {
+                setState(prev => ({
+                  ...prev,
+                  strategy: {
+                    reasoning: (prev.strategy?.reasoning || '') + (data.chunk || ''),
+                    searches: prev.strategy?.searches || []
                   }
                 }))
               } else if (data.type === 'answer') {

@@ -31,8 +31,8 @@ export function StreamingResponse({
   answers,
   finalAnswer
 }: StreamingResponseProps) {
-  const [strategyOpen, setStrategyOpen] = useState(false)
-  const [answersOpen, setAnswersOpen] = useState(false)
+  const [strategyOpen, setStrategyOpen] = useState(true)
+  const [answersOpen, setAnswersOpen] = useState(true)
   const { openModal } = useModalManager()
   const { t } = useTranslation()
 
@@ -79,7 +79,7 @@ export function StreamingResponse({
               <CardContent className="space-y-3 pt-0">
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">{t.common.reasoning}:</p>
-                  <p className="text-sm">{strategy.reasoning}</p>
+                  <p className="text-sm whitespace-pre-wrap">{strategy.reasoning}</p>
                 </div>
                 {strategy.searches.length > 0 && (
                   <div>

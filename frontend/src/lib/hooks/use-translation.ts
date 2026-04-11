@@ -88,17 +88,13 @@ export function useTranslation() {
 
           const currentPath = path ? `${path}.${prop}` : prop;
 
-          // Try to get the translation first (before checking target properties,
-          // since target is a function and has built-in properties like 'name'
-          // that would shadow translation keys)
-          const result = i18nTranslateCopy(currentPath, { returnObjects: true });
+          // Special React rendering check (to avoid proxying as functions)
+          if (prop === '$$typeof') return undefined;
+          if (prop === 'bind') return undefined;
+          // Convert to primitive if needed
+          if (prop === Symbol.toPrimitive as unknown) return () => currentPath;
 
-          // If it's a leaf string, return it directly
-          if (typeof result === 'string') {
-            return result;
-          }
-
-          // Handle String.prototype methods on the current path
+          // Handle String.prototype methods BEFORE proxy resolution if possible
           if (prop === 'replace' || prop === 'split' || prop === 'length' ||
               prop === 'trim' || prop === 'toLowerCase' || prop === 'toUpperCase') {
             const translated = i18nTranslateCopy(path);
@@ -109,13 +105,20 @@ export function useTranslation() {
             }
           }
 
-          // If i18n returned the key itself (meaning not found), stop recursion
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if ((result as any) === currentPath || result === undefined || result === null) {
-            return currentPath; // Return path as fallback instead of continuing
+          // Try to get the translation first
+          const result = i18nTranslateCopy(currentPath, { returnObjects: true });
+
+          // If it's a leaf string, return it directly
+          if (typeof result === 'string') {
+            return result;
           }
 
-          // If it's an object (nested structure), continue with depth limit
+          if ((result as any) === currentPath || result === undefined || result === null) {
+            // Return the unresolved path so React renders it correctly
+            // as a plain string instead of a Proxy object or function
+            return currentPath;
+          }
+
           if (typeof result === 'object') {
             return createProxy(currentPath, depth + 1);
           }

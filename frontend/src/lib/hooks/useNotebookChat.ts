@@ -172,7 +172,7 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     return response.context
   }, [notebookId, sources, notes, contextSelections])
 
-  // Send message (synchronous, no streaming)
+  // Send message (with streaming)
   const sendMessage = useCallback(async (message: string, modelOverride?: string) => {
     let sessionId = currentSessionId
 
@@ -213,8 +213,10 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
     setIsSending(true)
 
     try {
-      // Build context and send message
+      // Build context
       const context = await buildContext()
+      
+      // Start streaming request
       const response = await chatApi.sendMessage({
         session_id: sessionId,
         message,
@@ -222,10 +224,95 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
         model_override: modelOverride ?? (currentSession?.model_override ?? undefined)
       })
 
-      // Update messages with API response
-      setMessages(response.messages)
+      if (!response) {
+        throw new Error('No response body')
+      }
 
-      // Refetch current session to get updated data
+      const reader = response.getReader()
+      const decoder = new TextDecoder()
+      let aiMessage: NotebookChatMessage | null = null
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) {
+          // Process any remaining data in buffer
+          if (buffer) {
+            const lines = buffer.split('\n')
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.slice(6))
+                  if (data.type === 'ai_message') {
+                    if (!aiMessage) {
+                      aiMessage = {
+                        id: `ai-${Date.now()}`,
+                        type: 'ai',
+                        content: data.content || '',
+                        timestamp: new Date().toISOString()
+                      }
+                      setMessages(prev => [...prev, aiMessage!])
+                    } else {
+                      aiMessage.content += data.content || ''
+                      setMessages(prev =>
+                        prev.map(msg => msg.id === aiMessage!.id
+                          ? { ...msg, content: aiMessage!.content }
+                          : msg
+                        )
+                      )
+                    }
+                  }
+                } catch(e) {}
+              }
+            }
+          }
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+        
+        let newlineIndex
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIndex)
+          buffer = buffer.slice(newlineIndex + 1)
+          
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6))
+              
+              if (data.type === 'ai_message') {
+                if (!aiMessage) {
+                  aiMessage = {
+                    id: `ai-${Date.now()}`,
+                    type: 'ai',
+                    content: data.content || '',
+                    timestamp: new Date().toISOString()
+                  }
+                  setMessages(prev => [...prev, aiMessage!])
+                } else {
+                  aiMessage.content += data.content || ''
+                  setMessages(prev =>
+                    prev.map(msg => msg.id === aiMessage!.id
+                      ? { ...msg, content: aiMessage!.content }
+                      : msg
+                    )
+                  )
+                }
+              } else if (data.type === 'error') {
+                throw new Error(data.message || 'Stream error')
+              }
+            } catch (e) {
+              if (e instanceof SyntaxError) {
+                console.error('Error parsing SSE data:', e, 'Line:', line)
+              } else {
+                throw e
+              }
+            }
+          }
+        }
+      }
+
+      // Refetch current session to get updated data and persistence
       await refetchCurrentSession()
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }, message?: string };

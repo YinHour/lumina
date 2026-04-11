@@ -1,5 +1,8 @@
 """Surreal-commands integration for Open Notebook"""
 
+from open_notebook.utils.logger_config import setup_logging
+setup_logging()
+
 from .embedding_commands import (
     embed_insight_command,
     embed_note_command,
@@ -9,6 +12,7 @@ from .embedding_commands import (
 from .example_commands import analyze_data_command, process_text_command
 from .podcast_commands import generate_podcast_command
 from .source_commands import process_source_command
+from .kg_commands import extract_knowledge_graph_command
 
 __all__ = [
     # Embedding commands
@@ -19,6 +23,7 @@ __all__ = [
     # Other commands
     "generate_podcast_command",
     "process_source_command",
+    "extract_knowledge_graph_command",
     "process_text_command",
     "analyze_data_command",
 ]

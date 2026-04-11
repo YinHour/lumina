@@ -1,5 +1,6 @@
 'use client'
 
+import { use, useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useCallback } from 'react'
 import { Button } from '@/components/ui/button'
@@ -9,10 +10,10 @@ import { ChatPanel } from '@/components/source/ChatPanel'
 import { useNavigation } from '@/lib/hooks/use-navigation'
 import { SourceDetailContent } from '@/components/source/SourceDetailContent'
 
-export default function SourceDetailPage() {
+export default function SourceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
-  const params = useParams()
-  const sourceId = params?.id ? decodeURIComponent(params.id as string) : ''
+  const resolvedParams = use(params)
+  const sourceId = resolvedParams?.id ? decodeURIComponent(resolvedParams.id) : ''
   const navigation = useNavigation()
 
   // Initialize source chat

@@ -62,10 +62,11 @@ async def stream_ask_response(
     question: str, strategy_model: Model, answer_model: Model, final_answer_model: Model
 ) -> AsyncGenerator[str, None]:
     """Stream the ask response as Server-Sent Events."""
+    import asyncio
     try:
         final_answer = None
 
-        async for chunk in ask_graph.astream(
+        async for event in ask_graph.astream_events(
             input=dict(question=question),  # type: ignore[arg-type]
             config=dict(
                 configurable=dict(
@@ -74,28 +75,40 @@ async def stream_ask_response(
                     final_answer_model=final_answer_model.id,
                 )
             ),
-            stream_mode="updates",
+            version="v2",
         ):
-            if "agent" in chunk:
-                strategy_data = {
-                    "type": "strategy",
-                    "reasoning": chunk["agent"]["strategy"].reasoning,
-                    "searches": [
-                        {"term": search.term, "instructions": search.instructions}
-                        for search in chunk["agent"]["strategy"].searches
-                    ],
-                }
-                yield f"data: {json.dumps(strategy_data)}\n\n"
+            kind = event["event"]
+            if kind == "on_chat_model_stream" or kind == "on_llm_stream":
+                if event.get("metadata", {}).get("langgraph_node") == "agent":
+                    if "chunk" in event["data"]:
+                        chunk = event["data"]["chunk"]
+                        if hasattr(chunk, "content") and chunk.content:
+                            if isinstance(chunk.content, str):
+                                yield f"data: {json.dumps({'type': 'strategy_reasoning_chunk', 'chunk': chunk.content})}\n\n"
+                                await asyncio.sleep(0.001)
 
-            elif "provide_answer" in chunk:
-                for answer in chunk["provide_answer"]["answers"]:
-                    answer_data = {"type": "answer", "content": answer}
-                    yield f"data: {json.dumps(answer_data)}\n\n"
+            elif kind == "on_chain_end":
+                if event["name"] == "agent" and "output" in event["data"] and event["data"]["output"] and "strategy" in event["data"]["output"]:
+                    strategy = event["data"]["output"]["strategy"]
+                    strategy_data = {
+                        "type": "strategy",
+                        "reasoning": strategy.reasoning,
+                        "searches": [
+                            {"term": search.term, "instructions": search.instructions}
+                            for search in strategy.searches
+                        ],
+                    }
+                    yield f"data: {json.dumps(strategy_data)}\n\n"
 
-            elif "write_final_answer" in chunk:
-                final_answer = chunk["write_final_answer"]["final_answer"]
-                final_data = {"type": "final_answer", "content": final_answer}
-                yield f"data: {json.dumps(final_data)}\n\n"
+                elif event["name"] == "provide_answer" and "output" in event["data"] and event["data"]["output"] and "answers" in event["data"]["output"]:
+                    for answer in event["data"]["output"]["answers"]:
+                        answer_data = {"type": "answer", "content": answer}
+                        yield f"data: {json.dumps(answer_data)}\n\n"
+
+                elif event["name"] == "write_final_answer" and "output" in event["data"] and event["data"]["output"] and "final_answer" in event["data"]["output"]:
+                    final_answer = event["data"]["output"]["final_answer"]
+                    final_data = {"type": "final_answer", "content": final_answer}
+                    yield f"data: {json.dumps(final_data)}\n\n"
 
         # Send completion signal
         completion_data = {"type": "complete", "final_answer": final_answer}
@@ -147,7 +160,12 @@ async def ask_knowledge_base(ask_request: AskRequest):
             stream_ask_response(
                 ask_request.question, strategy_model, answer_model, final_answer_model
             ),
-            media_type="text/plain",
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
         )
 
     except HTTPException:

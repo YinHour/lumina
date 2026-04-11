@@ -52,10 +52,11 @@ export interface StrategyData {
 }
 
 export interface AskStreamEvent {
-  type: 'strategy' | 'answer' | 'final_answer' | 'complete' | 'error'
+  type: 'strategy' | 'strategy_reasoning_chunk' | 'answer' | 'final_answer' | 'complete' | 'error'
   reasoning?: string
   searches?: Array<{ term: string; instructions: string }>
   content?: string
+  chunk?: string
   final_answer?: string
   message?: string
 }
