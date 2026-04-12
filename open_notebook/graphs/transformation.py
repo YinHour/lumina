@@ -46,7 +46,7 @@ async def run_transformation(state: dict, config: RunnableConfig) -> dict:
             str(payload),
             config.get("configurable", {}).get("model_id"),
             "transformation",
-            max_tokens=8192,
+            max_tokens=60000,
         )
 
         response = await chain.ainvoke(payload)

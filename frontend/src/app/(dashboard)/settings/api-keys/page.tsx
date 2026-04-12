@@ -1386,12 +1386,12 @@ export default function ApiKeysPage() {
           {/* Help link */}
           <div className="border-t pt-4">
             <a
-              href="https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/ai-providers.md"
+              href="https://github.com/lfnovo/open-notebook"
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-primary hover:underline"
             >
-              {t.apiKeys.learnMore}
+              Open Notebook on GitHub →
             </a>
           </div>
         </div>
