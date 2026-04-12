@@ -78,7 +78,19 @@ async def content_process(state: SourceState) -> dict:
     logger.info(f"Starting content extraction for source_id={state.get('source_id')}")
     logger.info(f"Engine doc: {content_state.get('document_engine')}, URL: {content_state.get('url_engine')}")
     try:
-        processed_state = await extract_content(content_state)
+        import asyncio
+        
+        def _sync_extract(state):
+            # Create a new event loop for this thread to run the async function
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(extract_content(state))
+            finally:
+                loop.close()
+                
+        # 让 CPU 密集型任务在背景线程中运行，不阻塞主事件循环
+        processed_state = await asyncio.to_thread(_sync_extract, content_state)
         logger.info(f"Content extraction completed for source_id={state.get('source_id')}")
         logger.debug(f"Extracted content length: {len(processed_state.content or '')} characters")
     except Exception as e:
@@ -161,15 +173,21 @@ async def transform_content(state: TransformationState) -> Optional[dict]:
         return None
     transformation: Transformation = state["transformation"]
 
-    logger.debug(f"Applying transformation {transformation.name}")
-    result = await transform_graph.ainvoke(
-        dict(input_text=content, transformation=transformation)  # type: ignore[arg-type]
+    logger.info(f"Submitting background job for transformation {transformation.name}")
+    from surreal_commands import submit_command
+    submit_command(
+        "open_notebook",
+        "run_transformation",
+        {
+            "source_id": str(source.id),
+            "transformation_id": str(transformation.id)
+        }
     )
-    await source.add_insight(transformation.title, result["output"])
+    
     return {
         "transformation": [
             {
-                "output": result["output"],
+                "output": "Transformation job submitted to background worker",
                 "transformation_name": transformation.name,
             }
         ]

@@ -367,6 +367,29 @@ async def create_source(
                     status_code=404, detail=f"Transformation {trans_id} not found"
                 )
 
+        # Pre-flight check: Validate required models exist before queuing
+        from open_notebook.ai.models import model_manager
+        defaults = await model_manager.get_defaults()
+
+        if source_data.embed and not defaults.default_embedding_model:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot process source: No default embedding model configured. Please configure one in Settings → Models."
+            )
+
+        if transformation_ids and not (defaults.default_transformation_model or defaults.default_chat_model):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot process source: No default transformation or chat model configured. Please configure one in Settings → Models."
+            )
+
+        # process_source also triggers extract_knowledge_graph which needs tools or chat model
+        if not (defaults.default_tools_model or defaults.default_chat_model):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot process source: No default tools or chat model configured for Knowledge Graph extraction. Please configure one in Settings → Models."
+            )
+
         # Branch based on processing mode
         if source_data.async_processing:
             # ASYNC PATH: Create source record first, then queue command

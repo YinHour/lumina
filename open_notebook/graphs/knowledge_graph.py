@@ -110,6 +110,7 @@ async def process_chunks(state: KGState, config: RunnableConfig) -> dict:
     batch_size = 5
     for i in range(0, len(chunks), batch_size):
         batch = chunks[i:i + batch_size]
+        logger.info(f"Extracting KG for chunks {i+1} to {min(i+batch_size, len(chunks))} of {len(chunks)}")
         tasks = [extract_from_chunk(c) for c in batch]
         results = await asyncio.gather(*tasks)
         
