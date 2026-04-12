@@ -120,7 +120,6 @@ const PROVIDER_DOCS: Record<string, string> = {
   elevenlabs: 'https://elevenlabs.io/app/settings/api-keys',
   azure: 'https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI',
   vertex: 'https://cloud.google.com/vertex-ai/docs/start/cloud-environment',
-  openai_compatible: 'https://github.com/lfnovo/open-notebook/blob/main/docs/5-CONFIGURATION/openai-compatible.md',
   dashscope: 'https://help.aliyun.com/zh/model-studio/getting-started/',
   minimax: 'https://platform.minimaxi.com/document/Guides',
 }
@@ -780,8 +779,6 @@ function CredentialItem({
       'Tools': defaults.default_tools_model,
       'Large Ctx': defaults.large_context_model,
       'Embedding': defaults.default_embedding_model,
-      'TTS': defaults.default_text_to_speech_model,
-      'STT': defaults.default_speech_to_text_model,
     }
     for (const [slot, modelId] of Object.entries(slotMap)) {
       if (modelId) defaultSlots[modelId] = slot
@@ -1087,8 +1084,6 @@ function DefaultModelSelectors({
   const primaryConfigs: DefaultConfig[] = [
     { key: 'default_chat_model', label: t.models.chatModelLabel, description: t.models.chatModelDesc, modelType: 'language', required: true, id: `${generatedId}-chat` },
     { key: 'default_embedding_model', label: t.models.embeddingModelLabel, description: t.models.embeddingModelDesc, modelType: 'embedding', required: true, id: `${generatedId}-embed` },
-    { key: 'default_text_to_speech_model', label: t.models.ttsModelLabel, description: t.models.ttsModelDesc, modelType: 'text_to_speech', id: `${generatedId}-tts` },
-    { key: 'default_speech_to_text_model', label: t.models.sttModelLabel, description: t.models.sttModelDesc, modelType: 'speech_to_text', id: `${generatedId}-stt` },
   ]
 
   const advancedConfigs: DefaultConfig[] = [
@@ -1154,8 +1149,8 @@ function DefaultModelSelectors({
           </Alert>
         )}
 
-        {/* Primary models: Chat, Embedding, TTS, STT */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Primary models: Chat, Embedding */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-2">
           {primaryConfigs.map(config => {
             const available = getModelsForType(config.modelType)
             const currentValue = watch(config.key) || undefined
@@ -1381,18 +1376,6 @@ export default function ApiKeysPage() {
                 encryptionReady={encryptionReady}
               />
             ))}
-          </div>
-
-          {/* Help link */}
-          <div className="border-t pt-4">
-            <a
-              href="https://github.com/lfnovo/open-notebook"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-primary hover:underline"
-            >
-              Open Notebook on GitHub →
-            </a>
           </div>
         </div>
       </div>

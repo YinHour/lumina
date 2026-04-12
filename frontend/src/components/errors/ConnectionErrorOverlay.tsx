@@ -102,20 +102,6 @@ export function ConnectionErrorOverlay({
           )}
         </div>
 
-        {/* Documentation link */}
-        <div className="text-sm">
-          <p>{t.connectionErrors.seeDocumentation}</p>
-          <a
-            href="https://github.com/lfnovo/open-notebook"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-primary hover:underline inline-flex items-center gap-1"
-          >
-            {t.connectionErrors.docLink}
-            <ExternalLink className="w-4 h-4" />
-          </a>
-        </div>
-
         {/* Collapsible technical details */}
         {error.details && (
           <Collapsible open={showDetails} onOpenChange={setShowDetails}>
