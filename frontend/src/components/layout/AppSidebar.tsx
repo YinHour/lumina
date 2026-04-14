@@ -58,12 +58,6 @@ const getNavigation = (t: TranslationKeys) => [
     ],
   },
   {
-    title: t.navigation.create,
-    items: [
-      { name: t.navigation.podcasts, href: '/podcasts', icon: Mic },
-    ],
-  },
-  {
     title: t.navigation.manage,
     items: [
       { name: t.navigation.models, href: '/settings/api-keys', icon: Bot },
@@ -74,7 +68,7 @@ const getNavigation = (t: TranslationKeys) => [
   },
 ] as const
 
-type CreateTarget = 'source' | 'notebook' | 'podcast'
+type CreateTarget = 'source' | 'notebook'
 
 export function AppSidebar() {
   const { t } = useTranslation()
@@ -82,7 +76,7 @@ export function AppSidebar() {
   const pathname = usePathname()
   const { logout } = useAuth()
   const { isCollapsed, toggleCollapse } = useSidebarStore()
-  const { openSourceDialog, openNotebookDialog, openPodcastDialog } = useCreateDialogs()
+  const { openSourceDialog, openNotebookDialog } = useCreateDialogs()
 
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [isMac, setIsMac] = useState(true) // Default to Mac for SSR
@@ -99,8 +93,6 @@ export function AppSidebar() {
       openSourceDialog()
     } else if (target === 'notebook') {
       openNotebookDialog()
-    } else if (target === 'podcast') {
-      openPodcastDialog()
     }
   }
 
@@ -225,16 +217,6 @@ export function AppSidebar() {
                 >
                    <Book className="h-4 w-4" />
                   {t.common.notebook}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={(event) => {
-                    event.preventDefault()
-                    handleCreateSelection('podcast')
-                  }}
-                  className="gap-2"
-                >
-                   <Mic className="h-4 w-4" />
-                  {t.common.podcast}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -32,4 +32,5 @@ if __name__ == "__main__":
         port=port,
         reload=reload,
         reload_dirs=[str(current_dir)] if reload else None,
+        access_log=False,
     )

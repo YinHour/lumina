@@ -13,24 +13,29 @@ services:
     pull_policy: always
 
   open_notebook:
-    image: lfnovo/open_notebook:v1-latest
+    image: lfnovo/open_notebook:local  # 假设你打的本地镜像tag叫这个，或者换成你实际的镜像名
     ports:
       - "8502:8502"  # Web UI
       - "5055:5055"  # REST API
     environment:
-      # REQUIRED: Change this to your own secret string
-      # This encrypts your API keys in the database
+      # 1. 核心加密密钥 (建议改成复杂的长字符串)
       - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
-
-      # Database connection (default values - no need to change)
+      # 2. 数据库连接 (保持默认即可)
       - SURREAL_URL=ws://surrealdb:8000/rpc
       - SURREAL_USER=root
       - SURREAL_PASSWORD=root
       - SURREAL_NAMESPACE=open_notebook
       - SURREAL_DATABASE=open_notebook
+      # 3. 将原 .env 中的自定义配置迁移至此
+      - CCORE_DOCUMENT_ENGINE=docling
+      - ENABLE_KNOWLEDGE_GRAPH=true
+      - KG_ENTITY_TYPES=MATERIAL,CHEMICAL,PROPERTY,CONDITION,RESULT,EXPERIMENT,PRODUCT,METHOD
+      - KG_RELATION_TYPES=USES_MATERIAL,HAS_CONDITION,YIELDS_RESULT,CONTAINS_CHEMICAL,MEASURES_PROPERTY,COMPARES_WITH,APPLIES_TO
+      
+      # 如果有 API_URL，也可以加在这里 (例如：部署到服务器时的公网域名)
+      # - API_URL=http://your-server-ip:5055 
     volumes:
       - ./notebook_data:/app/data
     depends_on:
       - surrealdb
     restart: always
-    pull_policy: always
