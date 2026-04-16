@@ -698,9 +698,9 @@ async def graph_search(keyword: str, results: int = 5):
         # Step 1: Find entry points
         entry_nodes = await repo_query(
             """
-            SELECT id, name, type, description, math::max(search::score(1)) AS relevance
+            SELECT id, name, type, description, math::max([search::score(1), search::score(2)]) AS relevance
             FROM kg_entity
-            WHERE name @1@ $keyword OR description @1@ $keyword
+            WHERE name @1@ $keyword OR description @2@ $keyword
             GROUP BY id, name, type, description
             ORDER BY relevance DESC
             LIMIT $limit

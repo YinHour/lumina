@@ -25,6 +25,7 @@ class ThreadState(TypedDict):
     context: Optional[str]
     context_config: Optional[dict]
     model_override: Optional[str]
+    enable_web_search: Optional[bool]
 
 
 async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -> dict:
@@ -56,6 +57,10 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
                 )
             )
 
+        if state.get("enable_web_search"):
+            from open_notebook.graphs.tools import tavily_search
+            model = model.bind_tools([tavily_search])
+
         ai_message = await model.ainvoke(payload, config=config)
 
         # Clean thinking content from AI response (e.g., <think>...</think> tags)
@@ -80,8 +85,17 @@ conn = sqlite3.connect(
 )
 memory = SqliteSaver(conn)
 
+from langgraph.prebuilt import ToolNode, tools_condition
+from open_notebook.graphs.tools import tavily_search
+
+# Create ToolNode
+tool_node = ToolNode([tavily_search])
+
 agent_state = StateGraph(ThreadState)
 agent_state.add_node("agent", call_model_with_messages)
+agent_state.add_node("tools", tool_node)
+
 agent_state.add_edge(START, "agent")
-agent_state.add_edge("agent", END)
+agent_state.add_conditional_edges("agent", tools_condition)
+agent_state.add_edge("tools", "agent")
 graph = agent_state.compile(checkpointer=memory)

@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Globe } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -19,7 +19,11 @@ import { ModelSelector } from './ModelSelector'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
-import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
+import {
+  convertReferencesToCompactMarkdown,
+  createCompactReferenceLinkComponent,
+  ensureNumberedWebBibliographySection
+} from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -36,7 +40,7 @@ interface ChatPanelProps {
   messages: SourceChatMessage[]
   isStreaming: boolean
   contextIndicators: SourceChatContextIndicator | null
-  onSendMessage: (message: string, modelOverride?: string) => void
+  onSendMessage: (message: string, modelOverride?: string, enableWebSearch?: boolean) => void
   modelOverride?: string
   onModelChange?: (model?: string) => void
   // Session management props
@@ -78,6 +82,7 @@ export function ChatPanel({
   const { t } = useTranslation()
   const chatInputId = useId()
   const [input, setInput] = useState('')
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -103,7 +108,7 @@ export function ChatPanel({
 
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
-      onSendMessage(input.trim(), modelOverride)
+      onSendMessage(input.trim(), modelOverride, webSearchEnabled)
       setInput('')
     }
   }
@@ -278,17 +283,27 @@ export function ChatPanel({
 
         {/* Input Area */}
         <div className="flex-shrink-0 p-4 space-y-3 border-t">
-          {/* Model selector */}
-          {onModelChange && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{t.chat.model}</span>
+          {/* Settings row */}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              className={`gap-2 text-xs ${webSearchEnabled ? 'bg-primary/10 border-primary/20 text-primary' : 'text-muted-foreground'}`}
+              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              disabled={isStreaming}
+            >
+              <Globe className={`h-3 w-3 ${webSearchEnabled ? 'text-primary' : ''}`} />
+              {t.settings?.webSearch || 'Web Search'}
+            </Button>
+            
+            {onModelChange && (
               <ModelSelector
                 currentModel={modelOverride}
                 onModelChange={onModelChange}
                 disabled={isStreaming}
               />
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="flex gap-2 items-end min-w-0">
             <Textarea
@@ -333,8 +348,12 @@ function AIMessageContent({
   onReferenceClick: (type: string, id: string) => void
 }) {
   const { t } = useTranslation()
-  // Convert references to compact markdown with numbered citations
-  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t.common.references)
+  // Ensure ## 参考文献 / ## Web References lists are ordered (1. 2. …) when the model omits numbers
+  const withNumberedBibliography = ensureNumberedWebBibliographySection(content)
+  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(
+    withNumberedBibliography,
+    t.common.workspaceReferences
+  )
 
   // Create custom link component for compact references
   const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
@@ -352,9 +371,13 @@ function AIMessageContent({
           h4: ({ children }) => <h4 className="mb-2 mt-4">{children}</h4>,
           h5: ({ children }) => <h5 className="mb-2 mt-3">{children}</h5>,
           h6: ({ children }) => <h6 className="mb-2 mt-3">{children}</h6>,
-          li: ({ children }) => <li className="mb-1">{children}</li>,
-          ul: ({ children }) => <ul className="mb-4 space-y-1">{children}</ul>,
-          ol: ({ children }) => <ol className="mb-4 space-y-1">{children}</ol>,
+          li: ({ children }) => <li className="mb-1 pl-0.5">{children}</li>,
+          ul: ({ children }) => <ul className="mb-4 list-disc space-y-1 pl-6 [list-style-position:outside]">{children}</ul>,
+          ol: ({ children }) => (
+            <ol className="mb-4 list-decimal space-y-1 pl-6 [list-style-position:outside] marker:text-foreground">
+              {children}
+            </ol>
+          ),
           table: ({ children }) => (
             <div className="my-4 overflow-x-auto">
               <table className="min-w-full border-collapse border border-border">{children}</table>

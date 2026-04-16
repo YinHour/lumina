@@ -114,6 +114,9 @@ async def provide_answer(state: SubGraphState, config: RunnableConfig) -> dict:
         if len(results) == 0:
             return {"answers": []}
             
+        # 强制把 id 以 'note:' 开头的结果排在最前面
+        results = sorted(results, key=lambda x: str(x.get("id", "")).startswith("note:"), reverse=True)
+            
         payload["results"] = results
         ids = [r["id"] for r in results]
         payload["ids"] = ids

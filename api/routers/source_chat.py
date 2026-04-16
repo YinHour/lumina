@@ -81,6 +81,9 @@ class SendMessageRequest(BaseModel):
     model_override: Optional[str] = Field(
         None, description="Optional model override for this message"
     )
+    enable_web_search: Optional[bool] = Field(
+        False, description="Whether to enable web search for this message"
+    )
 
 class SuccessResponse(BaseModel):
     success: bool = Field(True, description="Operation success status")
@@ -250,13 +253,17 @@ async def get_source_chat_session(
             # Extract messages
             if "messages" in thread_state.values:
                 for msg in thread_state.values["messages"]:
+                    msg_type = msg.type if hasattr(msg, "type") else "unknown"
+                    if msg_type not in ["human", "ai"]:
+                        continue
+                    content = msg.content if hasattr(msg, "content") else str(msg)
+                    if not content and hasattr(msg, "tool_calls") and msg.tool_calls:
+                        continue  # Skip AI messages that only contain tool calls
                     messages.append(
                         ChatMessage(
                             id=getattr(msg, "id", f"msg_{len(messages)}"),
-                            type=msg.type if hasattr(msg, "type") else "unknown",
-                            content=msg.content
-                            if hasattr(msg, "content")
-                            else str(msg),
+                            type=msg_type,
+                            content=content,
                             timestamp=None,  # LangChain messages don't have timestamps by default
                         )
                     )
@@ -418,7 +425,7 @@ async def delete_source_chat_session(
 
 
 async def stream_source_chat_response(
-    session_id: str, source_id: str, message: str, model_override: Optional[str] = None
+    session_id: str, source_id: str, message: str, model_override: Optional[str] = None, enable_web_search: bool = False
 ) -> AsyncGenerator[str, None]:
     """Stream the source chat response as Server-Sent Events."""
     try:
@@ -434,6 +441,7 @@ async def stream_source_chat_response(
         state_values["messages"] = state_values.get("messages", [])
         state_values["source_id"] = source_id
         state_values["model_override"] = model_override
+        state_values["enable_web_search"] = enable_web_search
 
         # Add user message to state
         user_message = HumanMessage(content=message)
@@ -490,41 +498,45 @@ async def stream_source_chat_response(
                             elif isinstance(content, list):
                                 for c in content:
                                     if isinstance(c, dict) and "text" in c:
-                                        ai_event = {
-                                            "type": "ai_message",
-                                            "content": c["text"],
-                                            "timestamp": None,
-                                        }
-                                        yield f"data: {json.dumps(ai_event)}\n\n"
-                                        await asyncio.sleep(0.001)
+                                        if not c["text"].startswith("<web_search_results>") and not c["text"].endswith("</web_search_results>"):
+                                            ai_event = {
+                                                "type": "ai_message",
+                                                "content": c["text"],
+                                                "timestamp": None,
+                                            }
+                                            yield f"data: {json.dumps(ai_event)}\n\n"
+                                            await asyncio.sleep(0.001)
                                     elif isinstance(c, str):
-                                        ai_event = {
-                                            "type": "ai_message",
-                                            "content": c,
-                                            "timestamp": None,
-                                        }
-                                        yield f"data: {json.dumps(ai_event)}\n\n"
-                                        await asyncio.sleep(0.001)
+                                        if not c.startswith("<web_search_results>") and not c.endswith("</web_search_results>"):
+                                            ai_event = {
+                                                "type": "ai_message",
+                                                "content": c,
+                                                "timestamp": None,
+                                            }
+                                            yield f"data: {json.dumps(ai_event)}\n\n"
+                                            await asyncio.sleep(0.001)
                                         
                         # Also handle direct content streams if chunk is just a string or dict
                         elif isinstance(chunk, str) and chunk:
-                            yielded_ai_chunks = True
-                            ai_event = {
-                                "type": "ai_message",
-                                "content": chunk,
-                                "timestamp": None,
-                            }
-                            yield f"data: {json.dumps(ai_event)}\n\n"
-                            await asyncio.sleep(0.001)
+                            if not chunk.startswith("<web_search_results>") and not chunk.endswith("</web_search_results>"):
+                                yielded_ai_chunks = True
+                                ai_event = {
+                                    "type": "ai_message",
+                                    "content": chunk,
+                                    "timestamp": None,
+                                }
+                                yield f"data: {json.dumps(ai_event)}\n\n"
+                                await asyncio.sleep(0.001)
                         elif isinstance(chunk, dict) and "content" in chunk and chunk["content"]:
-                            yielded_ai_chunks = True
-                            ai_event = {
-                                "type": "ai_message",
-                                "content": chunk["content"],
-                                "timestamp": None,
-                            }
-                            yield f"data: {json.dumps(ai_event)}\n\n"
-                            await asyncio.sleep(0.001)
+                            if not chunk["content"].startswith("<web_search_results>") and not chunk["content"].endswith("</web_search_results>"):
+                                yielded_ai_chunks = True
+                                ai_event = {
+                                    "type": "ai_message",
+                                    "content": chunk["content"],
+                                    "timestamp": None,
+                                }
+                                yield f"data: {json.dumps(ai_event)}\n\n"
+                                await asyncio.sleep(0.001)
                             
                 # Some models yield raw strings in astream_events instead of chunk objects
                 elif kind == "on_chat_model_end":
@@ -534,16 +546,17 @@ async def stream_source_chat_response(
                             yielded_ai_chunks = True
                             content = event["data"]["output"]["content"]
                             if isinstance(content, str):
-                                # Split into smaller chunks so it looks like streaming
-                                chunk_size = 50
-                                for i in range(0, len(content), chunk_size):
-                                    ai_event = {
-                                        "type": "ai_message",
-                                        "content": content[i:i+chunk_size],
-                                        "timestamp": None,
-                                    }
-                                    yield f"data: {json.dumps(ai_event)}\n\n"
-                                    await asyncio.sleep(0.01)
+                                if not content.startswith("<web_search_results>") and not content.endswith("</web_search_results>"):
+                                    # Split into smaller chunks so it looks like streaming
+                                    chunk_size = 50
+                                    for i in range(0, len(content), chunk_size):
+                                        ai_event = {
+                                            "type": "ai_message",
+                                            "content": content[i:i+chunk_size],
+                                            "timestamp": None,
+                                        }
+                                        yield f"data: {json.dumps(ai_event)}\n\n"
+                                        await asyncio.sleep(0.01)
                                     
                 elif kind == "on_chain_end" and event["name"] == "LangGraph":
                     # Graph finished, we can extract any context_indicators from final state
@@ -656,6 +669,7 @@ async def send_message_to_source_chat(
                 source_id=full_source_id,
                 message=request.message,
                 model_override=model_override,
+                enable_web_search=request.enable_web_search or False,
             ),
             media_type="text/event-stream",
             headers={

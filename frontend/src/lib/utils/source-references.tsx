@@ -1,5 +1,11 @@
 import React from 'react'
 import { FileText, Lightbulb, FileEdit } from 'lucide-react'
+import { getMaxWebCitationNumber } from './source-references-bibliography'
+
+export {
+  ensureNumberedWebBibliographySection,
+  getMaxWebCitationNumber
+} from './source-references-bibliography'
 
 export type ReferenceType = 'source' | 'note' | 'source_insight'
 
@@ -347,7 +353,8 @@ export function convertReferencesToCompactMarkdown(text: string, referencesLabel
 
   // Step 3: Build reference map (deduplicate and assign numbers)
   const referenceMap = new Map<string, ReferenceData>()
-  let nextNumber = 1
+  // Number workspace (source/note/insight) refs after any web citations [n](https://...) from the LLM
+  let nextNumber = getMaxWebCitationNumber(text) + 1
 
   for (const reference of references) {
     const key = `${reference.type}:${reference.id}`
