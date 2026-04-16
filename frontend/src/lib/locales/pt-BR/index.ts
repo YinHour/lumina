@@ -61,6 +61,7 @@ export const ptBR = {
     actions: "Ações",
     noResults: "Sem resultados",
     references: "Referências",
+    workspaceReferences: "Referências do espaço de trabalho",
     refreshPage: "Por favor, tente atualizar a página",
     refresh: "Atualizar",
     aiGenerated: "Gerado por IA",

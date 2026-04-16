@@ -61,6 +61,7 @@ export const frFR = {
     actions: "Actions",
     noResults: "Aucun résultat",
     references: "Références",
+    workspaceReferences: "Références de l’espace de travail",
     refreshPage: "Veuillez essayer de rafraîchir la page",
     refresh: "Rafraîchir",
     aiGenerated: "Généré par IA",

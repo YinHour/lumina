@@ -1,4 +1,4 @@
-.PHONY: run frontend check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart
+.PHONY: run frontend frontend-test-bib check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart
 .PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
 .PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
 
@@ -12,6 +12,13 @@ GHCR_IMAGE := ghcr.io/lfnovo/open-notebook
 # Build platforms
 PLATFORMS := linux/amd64,linux/arm64
 
+init-mac:
+	@echo "📦 Installing dependencies using uv sync..."
+	uv sync
+	@echo "🔧 Applying compatibility patches for MinerU..."
+	uv run python scripts/patch_mineru.py
+	@echo "✅ Initialization complete! You can now run MinerU on Mac."
+
 database:
 	docker compose up -d surrealdb
 
@@ -21,6 +28,10 @@ run:
 
 frontend:
 	cd frontend && npm run dev
+
+# Verify 参考文献 auto-numbering (run on your machine; requires Node/npm in PATH)
+frontend-test-bib:
+	cd frontend && npm run test -- --run src/lib/utils/source-references.bibliography.test.ts
 
 lint:
 	uv run python -m mypy .

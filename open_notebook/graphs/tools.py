@@ -20,8 +20,7 @@ async def tavily_search(query: str) -> str:
     Use this ONLY when the user explicitly requests a web search or asks for latest information outside of the local context.
     Returns highly relevant web snippets and URLs.
     
-    When using the results from this tool, you MUST cite the URL in Markdown format immediately following the referenced information.
-    Example: (Reference: [Title](URL))
+    When using the results, follow the system prompt: inline citations as numbered markdown links [1](URL), [2](URL) in citation order, plus one numbered "## Web References" or "## 参考文献" section at the end — do not duplicate "References" and "引用".
     """
     from open_notebook.domain.content_settings import ContentSettings
     from langchain_community.tools.tavily_search import TavilySearchResults

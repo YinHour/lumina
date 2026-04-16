@@ -61,6 +61,7 @@ export const itIT = {
     actions: "Azioni",
     noResults: "Nessun risultato",
     references: "Riferimenti",
+    workspaceReferences: "Riferimenti dell’area di lavoro",
     refreshPage: "Prova ad aggiornare la pagina",
     refresh: "Aggiorna",
     aiGenerated: "Generato da IA",

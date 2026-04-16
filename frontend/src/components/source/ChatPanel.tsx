@@ -19,7 +19,11 @@ import { ModelSelector } from './ModelSelector'
 import { ContextIndicator } from '@/components/common/ContextIndicator'
 import { SessionManager } from '@/components/source/SessionManager'
 import { MessageActions } from '@/components/source/MessageActions'
-import { convertReferencesToCompactMarkdown, createCompactReferenceLinkComponent } from '@/lib/utils/source-references'
+import {
+  convertReferencesToCompactMarkdown,
+  createCompactReferenceLinkComponent,
+  ensureNumberedWebBibliographySection
+} from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -344,8 +348,12 @@ function AIMessageContent({
   onReferenceClick: (type: string, id: string) => void
 }) {
   const { t } = useTranslation()
-  // Convert references to compact markdown with numbered citations
-  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t.common.references)
+  // Ensure ## 参考文献 / ## Web References lists are ordered (1. 2. …) when the model omits numbers
+  const withNumberedBibliography = ensureNumberedWebBibliographySection(content)
+  const markdownWithCompactRefs = convertReferencesToCompactMarkdown(
+    withNumberedBibliography,
+    t.common.workspaceReferences
+  )
 
   // Create custom link component for compact references
   const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
@@ -363,9 +371,13 @@ function AIMessageContent({
           h4: ({ children }) => <h4 className="mb-2 mt-4">{children}</h4>,
           h5: ({ children }) => <h5 className="mb-2 mt-3">{children}</h5>,
           h6: ({ children }) => <h6 className="mb-2 mt-3">{children}</h6>,
-          li: ({ children }) => <li className="mb-1">{children}</li>,
-          ul: ({ children }) => <ul className="mb-4 space-y-1">{children}</ul>,
-          ol: ({ children }) => <ol className="mb-4 space-y-1">{children}</ol>,
+          li: ({ children }) => <li className="mb-1 pl-0.5">{children}</li>,
+          ul: ({ children }) => <ul className="mb-4 list-disc space-y-1 pl-6 [list-style-position:outside]">{children}</ul>,
+          ol: ({ children }) => (
+            <ol className="mb-4 list-decimal space-y-1 pl-6 [list-style-position:outside] marker:text-foreground">
+              {children}
+            </ol>
+          ),
           table: ({ children }) => (
             <div className="my-4 overflow-x-auto">
               <table className="min-w-full border-collapse border border-border">{children}</table>

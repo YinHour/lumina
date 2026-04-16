@@ -203,11 +203,17 @@ async def get_session(session_id: str):
         messages: list[ChatMessage] = []
         if thread_state and thread_state.values and "messages" in thread_state.values:
             for msg in thread_state.values["messages"]:
+                msg_type = msg.type if hasattr(msg, "type") else "unknown"
+                if msg_type not in ["human", "ai"]:
+                    continue
+                content = msg.content if hasattr(msg, "content") else str(msg)
+                if not content and hasattr(msg, "tool_calls") and msg.tool_calls:
+                    continue  # Skip AI messages that only contain tool calls
                 messages.append(
                     ChatMessage(
                         id=getattr(msg, "id", f"msg_{len(messages)}"),
-                        type=msg.type if hasattr(msg, "type") else "unknown",
-                        content=msg.content if hasattr(msg, "content") else str(msg),
+                        type=msg_type,
+                        content=content,
                         timestamp=None,  # LangChain messages don't have timestamps by default
                     )
                 )

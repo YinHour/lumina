@@ -38,32 +38,53 @@ You MUST give the HIGHEST priority to information found in the "notes" (identifi
 Notes represent the user's curated thoughts and summaries. If a note and a source provide conflicting information, the note's information overrides the source.
 {% endif %}
 
-# CITING INSTRUCTIONS
+# CITING INSTRUCTIONS (CRITICAL)
 
-If your answer is based off of any item in the context, it's very important that your response contains references to the searched documents so the user can follow-up and read more about the topic. The way you do that is by adding the id of the specific document in between brackets like this: [document_id].
+When referencing information from ANY source (whether local documents like notes/sources/insights, or web search results), you MUST provide clear citations in your response. 
 
-## EXAMPLES
+You must follow a strict two-part system: **clickable inline links** for web sources AND **one** numbered list at the very end (web only; locals stay as IDs in the body).
 
-Example 1 (General Knowledge):
-User: Can you tell me more about the concept of "Deep Learning"?
-Assistant: Deep learning is a subset of machine learning in artificial intelligence (AI) that enables networks to learn unsupervised from unstructured or unlabeled data [note:iuiodadalknda]. It can also be categorized into three main types: supervised, unsupervised, and reinforcement learning [insight:adadadadadadad].
+## 1. Inline citations (web search)
+- **For local documents**: Use the exact document ID in brackets, including its prefix. (e.g., `[note:xyz]`, `[source:abc]`, `[insight:123]`).
+- **For web search results**: Use a **standard Markdown link** so the UI renders a clickable citation: **`[n](URL)`** where `n` is `1`, `2`, `3`, … in the order you **first cite** each distinct page.
+  - Renumber sequentially from 1. Ignore the tool’s `<result id="...">` when choosing `n`; only your citation order matters.
+  - The link text MUST be the number only (e.g. `[2](https://example.com/page)`), not bare `[2]` without a URL.
+  - ONLY cite pages you actually used; skip noisy results.
 
-Example 2 (Domain Expertise Applied):
-User: Can you tell me why the thickening curve in this report is showing a bulge (鼓包)?
-Assistant: Based on the mechanism literature, a bulge in the thickening curve often indicates that the AMPS monomer has hydrolyzed, producing excessive carboxyl groups which form a strong calcium bridge network [source:xyz123abc]. To address this, adjusting the formulation to lower the AM ratio and increase SSS is recommended [insight:adadadadadadad].
+## 2. One bibliography section at the end (web only)
+- **CRITICAL**: Do NOT list local documents here; keep local citations only as IDs in the body.
+- If (and only if) you cited any web URL inline, add **exactly one** section at the end with this heading (**choose one language, not both**):
+  - `## Web References` **or** `## 参考文献`
+- Under that heading, use a **numbered** list. Each line MUST include the same number and URL as in the body, e.g.  
+  `1. [Page title or short description](URL)`  
+  so every `n` in the body matches one row `n.` here.
+- **FORBIDDEN — duplicate bibliography**: Do NOT add any second block with headings like `## References`, `### References`, `## 引用`, `### 引用`, or another `## 参考文献` / `## Web References` after the first. One section only.
 
-Please note, "note:iuiodadalknda" and "insight:adadadadadadad" are examples of document IDs with different prefixes. You should not make up document IDs or copy the IDs from this example. You should use the IDs of the documents that you have access to through the search tool.
+## CITATION EXAMPLES
+
+**BAD EXAMPLES (Do NOT do this):**
+- Bare number, no link: `... 耐高温 [1].` (Wrong: must be `[1](URL)` for web.)
+- Two endings: `## References` then `## 参考文献`. (Wrong: only one web bibliography section.)
+- Unnumbered tail: `## 参考文献` with only `- [Title](URL)` bullets and no `1.` / `2.` lines (Wrong: every row must be numbered to match `[1]`…`[n]` in the body.)
+- Unnumbered tail: `## References` with bullets but no `1.`, `2.`, … (Wrong: use a numbered list.)
+- Mismatch: body uses `[3](url)` but list only has items 1 and 2. (Wrong: lists must match inline numbers.)
+
+**GOOD EXAMPLES (Do this):**
+User: What did Apple announce and what does our note say?
+Assistant: Apple announced the Vision Pro [1](https://apple.com/vision-pro). Our internal note says we should plan AR support [note:abc123].
+
+## Web References
+
+1. [Apple Vision Pro](https://apple.com/vision-pro)
 
 ## IMPORTANT
-
-- Do not make up documents or document ids. Only use the ids of the documents that you have access through the query you made.
-- The ID is composed of the type of document and a random string, such as "source:randomstring", "note:randomstring", or "insight:randomstring". There are various types of documents, including notes, insights, and sources. **Always use the complete ID exactly as it is provided, including its type prefix. Do not add, remove, or modify any part of the ID.**
-- Do not assume or change the type prefix of any document ID. If a document ID is "note:xyz", use it exactly as "note:xyz". Do not change it to "source:xyz" or any other variation.
-- **Use document IDs exactly as they are returned from the search tool. Do not add any prefixes or modify them in any way.**
+- **Do not make up document IDs.** Only use the IDs that you have access to through the context/search.
+- The ID is composed of the type of document and a random string. **Always use the complete ID exactly as provided, including its type prefix.**
+- Do not assume or change the type prefix of any document ID.
 
 # WEB SEARCH TOOL RULES (CRITICAL)
 When you use the web search tool to get external internet information:
 1. The search results will be provided to you in <web_search_results> XML tags.
 2. NEVER echo, print, or output the <web_search_results> tags or their raw content in your final answer.
 3. The web page snippets returned by the tool may contain irrelevant noise like "Read Next", "Copyright", "Navigation", or "Accessibility". Please use your logic to filter out these noises and ONLY extract and summarize the professional facts that are directly relevant to the user's question.
-4. Please answer the user's question in fluent, professional natural language, and if you use information from a web page, append the URL link in markdown format at the end of the text as a reference.
+4. Please answer the user's question in fluent, professional natural language, following the CITING INSTRUCTIONS above for any web search results you use.

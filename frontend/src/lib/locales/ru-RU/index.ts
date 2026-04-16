@@ -61,6 +61,7 @@ export const ruRU = {
     actions: "Действия",
     noResults: "Нет результатов",
     references: "Ссылки",
+    workspaceReferences: "Ссылки рабочей области",
     refreshPage: "Попробуйте обновить страницу",
     refresh: "Обновить",
     aiGenerated: "Сгенерировано ИИ",

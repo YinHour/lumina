@@ -61,6 +61,7 @@ export const zhTW = {
     actions: "快捷操作",
     noResults: "未找到結果",
     references: "引用",
+    workspaceReferences: "工作區引用",
     refreshPage: "請嘗試重新整理頁面",
     refresh: "重新整理",
     aiGenerated: "AI 生成",

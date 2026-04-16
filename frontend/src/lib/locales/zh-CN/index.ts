@@ -61,6 +61,7 @@ export const zhCN = {
     actions: "快捷操作",
     noResults: "未找到结果",
     references: "引用",
+    workspaceReferences: "工作区引用",
     refreshPage: "请重试刷新页面",
     refresh: "刷新",
     aiGenerated: "AI 生成",

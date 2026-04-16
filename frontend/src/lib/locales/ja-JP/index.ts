@@ -61,6 +61,7 @@ export const jaJP = {
     actions: "アクション",
     noResults: "結果なし",
     references: "参照",
+    workspaceReferences: "ワークスペース参照",
     refreshPage: "ページを更新してください",
     refresh: "更新",
     aiGenerated: "AI生成",

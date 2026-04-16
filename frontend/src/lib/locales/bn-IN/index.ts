@@ -61,6 +61,7 @@ export const bnIN = {
     actions: "ক্রিয়া",
     noResults: "কোনো ফলাফল নেই",
     references: "রেফারেন্স",
+    workspaceReferences: "ওয়ার্কস্পেস রেফারেন্স",
     refreshPage: "অনুগ্রহ করে পৃষ্ঠাটি রিফ্রেশ করার চেষ্টা করুন",
     refresh: "রিফ্রেশ",
     aiGenerated: "AI দ্বারা তৈরি",
