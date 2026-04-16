@@ -36,6 +36,8 @@ class SettingsService:
             youtube_preferred_languages=settings_data.get(
                 "youtube_preferred_languages"
             ),
+            tavily_api_key=settings_data.get("tavily_api_key"),
+            tavily_include_domains=settings_data.get("tavily_include_domains"),
         )
 
         return settings
@@ -48,6 +50,8 @@ class SettingsService:
             "default_embedding_option": settings.default_embedding_option,
             "auto_delete_files": settings.auto_delete_files,
             "youtube_preferred_languages": settings.youtube_preferred_languages,
+            "tavily_api_key": settings.tavily_api_key,
+            "tavily_include_domains": settings.tavily_include_domains,
         }
 
         settings_response = api_client.update_settings(**updates)
@@ -71,6 +75,8 @@ class SettingsService:
         settings.youtube_preferred_languages = settings_data.get(
             "youtube_preferred_languages"
         )
+        settings.tavily_api_key = settings_data.get("tavily_api_key")
+        settings.tavily_include_domains = settings_data.get("tavily_include_domains")
 
         return settings
 

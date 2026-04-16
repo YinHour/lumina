@@ -28,6 +28,7 @@ class SourceChatState(TypedDict):
     context: Optional[str]
     model_override: Optional[str]
     context_indicators: Optional[Dict[str, List[str]]]
+    enable_web_search: Optional[bool]
 
 
 async def call_model_with_source_context(
@@ -137,6 +138,10 @@ async def _call_model_with_source_context_inner(
             )
         )
 
+    if state.get("enable_web_search"):
+        from open_notebook.graphs.tools import tavily_search
+        model = model.bind_tools([tavily_search])
+
     # Note: We pass the config so that callbacks (including streaming callbacks) are propagated
     # Since we are using astream_events on the graph, the model must be invoked asynchronously
     # Using ainvoke directly
@@ -219,9 +224,18 @@ conn = sqlite3.connect(
 )
 memory = SqliteSaver(conn)
 
+from langgraph.prebuilt import ToolNode, tools_condition
+from open_notebook.graphs.tools import tavily_search
+
+# Create ToolNode
+tool_node = ToolNode([tavily_search])
+
 # Create the StateGraph
 source_chat_state = StateGraph(SourceChatState)
 source_chat_state.add_node("source_chat_agent", call_model_with_source_context)
+source_chat_state.add_node("tools", tool_node)
+
 source_chat_state.add_edge(START, "source_chat_agent")
-source_chat_state.add_edge("source_chat_agent", END)
+source_chat_state.add_conditional_edges("source_chat_agent", tools_condition)
+source_chat_state.add_edge("tools", "source_chat_agent")
 source_chat_graph = source_chat_state.compile(checkpointer=memory)

@@ -1,3 +1,4 @@
 REMOVE TABLE IF EXISTS kg_relation;
 REMOVE INDEX IF EXISTS idx_kg_entity_name ON TABLE kg_entity;
+REMOVE INDEX IF EXISTS idx_kg_entity_desc ON TABLE kg_entity;
 REMOVE TABLE IF EXISTS kg_entity;

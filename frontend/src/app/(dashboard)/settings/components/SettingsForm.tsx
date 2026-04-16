@@ -3,6 +3,7 @@
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -16,23 +17,26 @@ import { ChevronDownIcon } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 
 const settingsSchema = z.object({
-  default_content_processing_engine_doc: z.enum(['auto', 'docling', 'simple']).optional(),
+  default_content_processing_engine_doc: z.enum(['auto', 'docling', 'mineru', 'simple']).optional(),
   default_content_processing_engine_url: z.enum(['auto', 'firecrawl', 'jina', 'simple']).optional(),
   default_embedding_option: z.enum(['ask', 'always', 'never']).optional(),
   auto_delete_files: z.enum(['yes', 'no']).optional(),
+  tavily_api_key: z.string().optional().nullable(),
+  tavily_include_domains: z.string().optional().nullable(),
 })
 
 type SettingsFormData = z.infer<typeof settingsSchema>
 
 export function SettingsForm() {
   const { t } = useTranslation()
-  const { data: settings, isLoading, error } = useSettings()
+  const { data: settings, isLoading, isFetching, error } = useSettings()
   const updateSettings = useUpdateSettings()
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     doc: false,
     url: false,
     embedding: false,
-    files: false
+    files: false,
+    webSearch: false
   })
   const [hasResetForm, setHasResetForm] = useState(false)
   
@@ -49,6 +53,8 @@ export function SettingsForm() {
       default_content_processing_engine_url: undefined,
       default_embedding_option: undefined,
       auto_delete_files: undefined,
+      tavily_api_key: '',
+      tavily_include_domains: '',
     }
   })
 
@@ -58,17 +64,20 @@ export function SettingsForm() {
   }
 
   useEffect(() => {
-    if (settings && settings.default_content_processing_engine_doc && !hasResetForm) {
+    // Wait until background fetch is complete so we don't populate with stale cache missing new fields
+    if (settings && settings.default_content_processing_engine_doc && !hasResetForm && !isFetching) {
       const formData = {
-        default_content_processing_engine_doc: settings.default_content_processing_engine_doc as 'auto' | 'docling' | 'simple',
+        default_content_processing_engine_doc: settings.default_content_processing_engine_doc as 'auto' | 'docling' | 'mineru' | 'simple',
         default_content_processing_engine_url: settings.default_content_processing_engine_url as 'auto' | 'firecrawl' | 'jina' | 'simple',
         default_embedding_option: settings.default_embedding_option as 'ask' | 'always' | 'never',
         auto_delete_files: settings.auto_delete_files as 'yes' | 'no',
+        tavily_api_key: settings.tavily_api_key || '',
+        tavily_include_domains: settings.tavily_include_domains || '',
       }
       reset(formData)
       setHasResetForm(true)
     }
-  }, [hasResetForm, reset, settings])
+  }, [hasResetForm, reset, settings, isFetching])
 
   const onSubmit = async (data: SettingsFormData) => {
     await updateSettings.mutateAsync(data)
@@ -122,6 +131,7 @@ export function SettingsForm() {
                     <SelectContent>
                       <SelectItem value="auto">{t.settings.autoRecommended}</SelectItem>
                       <SelectItem value="docling">{t.settings.docling}</SelectItem>
+                      <SelectItem value="mineru">{t.settings.mineru}</SelectItem>
                       <SelectItem value="simple">{t.settings.simple}</SelectItem>
                     </SelectContent>
                   </Select>
@@ -259,6 +269,62 @@ export function SettingsForm() {
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-2 text-sm text-muted-foreground space-y-2">
                 <p>{t.settings.filesHelp}</p>
+              </CollapsibleContent>
+            </Collapsible>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>{t.settings.webSearch}</CardTitle>
+          <CardDescription>
+            {t.settings.webSearchDesc}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+           <div className="space-y-3">
+            <Label htmlFor="tavily_api_key">{t.settings.tavilyApiKey}</Label>
+            <Controller
+              name="tavily_api_key"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="tavily_api_key"
+                  type="password"
+                  placeholder={t.settings.tavilyApiKeyPlaceholder}
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                  disabled={field.disabled || isLoading}
+                />
+              )}
+            />
+          </div>
+          
+          <div className="space-y-3">
+            <Label htmlFor="tavily_include_domains">{t.settings.tavilyIncludeDomains}</Label>
+            <Controller
+              name="tavily_include_domains"
+              control={control}
+              render={({ field }) => (
+                <Input
+                  id="tavily_include_domains"
+                  type="text"
+                  placeholder={t.settings.tavilyIncludeDomainsPlaceholder}
+                  value={field.value || ''}
+                  onChange={field.onChange}
+                  disabled={field.disabled || isLoading}
+                />
+              )}
+            />
+            
+             <Collapsible open={expandedSections.webSearch} onOpenChange={() => toggleSection('webSearch')}>
+              <CollapsibleTrigger className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                <ChevronDownIcon className={`h-4 w-4 transition-transform ${expandedSections.webSearch ? 'rotate-180' : ''}`} />
+                {t.settings.helpMeChoose}
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-2 text-sm text-muted-foreground space-y-2">
+                <p>{t.settings.tavilyHelp}</p>
               </CollapsibleContent>
             </Collapsible>
           </div>

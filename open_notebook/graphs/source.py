@@ -32,23 +32,8 @@ class TransformationState(TypedDict):
 
 
 async def content_process(state: SourceState) -> dict:
-    content_settings = ContentSettings(
-        default_content_processing_engine_doc="auto",
-        default_content_processing_engine_url="auto",
-        default_embedding_option="ask",
-        auto_delete_files="yes",
-        youtube_preferred_languages=[
-            "en",
-            "pt",
-            "es",
-            "de",
-            "nl",
-            "en-GB",
-            "fr",
-            "hi",
-            "ja",
-        ],
-    )
+    ContentSettings.clear_instance()  # Force reload from DB
+    content_settings = await ContentSettings.get_instance()
     content_state: Dict[str, Any] = state["content_state"]  # type: ignore[assignment]
 
     content_state["url_engine"] = (
@@ -79,8 +64,64 @@ async def content_process(state: SourceState) -> dict:
     logger.info(f"Engine doc: {content_state.get('document_engine')}, URL: {content_state.get('url_engine')}")
     try:
         import asyncio
+        import os
+        import subprocess
+        import tempfile
+        from content_core.common import ProcessSourceState
         
         def _sync_extract(state):
+            engine = state.get("document_engine")
+            file_path = state.get("file_path")
+            
+            # Intercept MinerU extraction
+            if engine == "mineru" and file_path and file_path.lower().endswith(('.pdf', '.ppt', '.pptx', '.doc', '.docx')):
+                logger.info(f"Using MinerU to extract content from {file_path}")
+                try:
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        # Run mineru CLI
+                        env = os.environ.copy()
+                        if "HF_ENDPOINT" not in env:
+                            env["HF_ENDPOINT"] = "https://hf-mirror.com"
+                            
+                        try:
+                            subprocess.run([
+                                "mineru",
+                                "-p", file_path,
+                                "-o", temp_dir,
+                                "-m", "auto"
+                            ], capture_output=True, text=True, check=True, env=env)
+                        except subprocess.CalledProcessError as e:
+                            logger.error(f"MinerU extraction process failed with exit code {e.returncode}")
+                            logger.error(f"MinerU stdout: {e.stdout}")
+                            logger.error(f"MinerU stderr: {e.stderr}")
+                            raise
+                        
+                        # Find the output directory (mineru creates a dir based on filename)
+                        base_name = os.path.splitext(os.path.basename(file_path))[0]
+                        out_dir = os.path.join(temp_dir, base_name)
+                        
+                        md_content = ""
+                        if os.path.exists(out_dir):
+                            for file in os.listdir(out_dir):
+                                if file.endswith(".md"):
+                                    with open(os.path.join(out_dir, file), "r", encoding="utf-8") as f:
+                                        md_content = f.read()
+                                    break
+                        
+                        if md_content:
+                            logger.info(f"Successfully extracted {len(md_content)} chars using MinerU.")
+                            state["content"] = md_content
+                            return ProcessSourceState(**state)
+                        else:
+                            logger.warning("MinerU failed to produce markdown output. Falling back to simple engine.")
+                            state["document_engine"] = "simple"
+                except Exception as e:
+                    logger.error(f"MinerU extraction failed: {e}. Falling back to simple engine.")
+                    state["document_engine"] = "simple"
+            elif engine == "mineru":
+                logger.warning("MinerU does not support this file type. Falling back to simple engine.")
+                state["document_engine"] = "simple"
+
             # Create a new event loop for this thread to run the async function
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)

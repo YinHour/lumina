@@ -59,6 +59,8 @@ export interface SettingsResponse {
   default_embedding_option?: string
   auto_delete_files?: string
   youtube_preferred_languages?: string[]
+  tavily_api_key?: string | null
+  tavily_include_domains?: string | null
 }
 
 export interface CreateNotebookRequest {
@@ -177,6 +179,7 @@ export interface UpdateSourceChatSessionRequest {
 export interface SendMessageRequest {
   message: string
   model_override?: string
+  enable_web_search?: boolean
 }
 
 export interface SourceChatStreamEvent {
@@ -222,6 +225,7 @@ export interface SendNotebookChatMessageRequest {
     notes: Array<Record<string, unknown>>
   }
   model_override?: string
+  enable_web_search?: boolean
 }
 
 export interface BuildContextRequest {

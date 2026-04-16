@@ -8,6 +8,7 @@ DEFINE FIELD IF NOT EXISTS created ON TABLE kg_entity DEFAULT time::now() VALUE 
 DEFINE FIELD IF NOT EXISTS updated ON TABLE kg_entity DEFAULT time::now() VALUE time::now();
 
 DEFINE INDEX IF NOT EXISTS idx_kg_entity_name ON TABLE kg_entity COLUMNS name SEARCH ANALYZER my_analyzer BM25;
+DEFINE INDEX IF NOT EXISTS idx_kg_entity_desc ON TABLE kg_entity COLUMNS description SEARCH ANALYZER my_analyzer BM25;
 
 DEFINE TABLE IF NOT EXISTS kg_relation SCHEMAFULL TYPE RELATION FROM kg_entity TO kg_entity;
 

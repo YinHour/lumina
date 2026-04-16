@@ -7,7 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock } from 'lucide-react'
+import { Bot, User, Send, Loader2, FileText, Lightbulb, StickyNote, Clock, Globe } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -36,7 +36,7 @@ interface ChatPanelProps {
   messages: SourceChatMessage[]
   isStreaming: boolean
   contextIndicators: SourceChatContextIndicator | null
-  onSendMessage: (message: string, modelOverride?: string) => void
+  onSendMessage: (message: string, modelOverride?: string, enableWebSearch?: boolean) => void
   modelOverride?: string
   onModelChange?: (model?: string) => void
   // Session management props
@@ -78,6 +78,7 @@ export function ChatPanel({
   const { t } = useTranslation()
   const chatInputId = useId()
   const [input, setInput] = useState('')
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -103,7 +104,7 @@ export function ChatPanel({
 
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
-      onSendMessage(input.trim(), modelOverride)
+      onSendMessage(input.trim(), modelOverride, webSearchEnabled)
       setInput('')
     }
   }
@@ -278,17 +279,27 @@ export function ChatPanel({
 
         {/* Input Area */}
         <div className="flex-shrink-0 p-4 space-y-3 border-t">
-          {/* Model selector */}
-          {onModelChange && (
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">{t.chat.model}</span>
+          {/* Settings row */}
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              className={`gap-2 text-xs ${webSearchEnabled ? 'bg-primary/10 border-primary/20 text-primary' : 'text-muted-foreground'}`}
+              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              disabled={isStreaming}
+            >
+              <Globe className={`h-3 w-3 ${webSearchEnabled ? 'text-primary' : ''}`} />
+              {t.settings?.webSearch || 'Web Search'}
+            </Button>
+            
+            {onModelChange && (
               <ModelSelector
                 currentModel={modelOverride}
                 onModelChange={onModelChange}
                 disabled={isStreaming}
               />
-            </div>
-          )}
+            )}
+          </div>
 
           <div className="flex gap-2 items-end min-w-0">
             <Textarea

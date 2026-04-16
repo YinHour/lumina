@@ -1,6 +1,7 @@
+import os
 from typing import ClassVar, List, Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from open_notebook.domain.base import RecordModel
 
@@ -8,8 +9,8 @@ from open_notebook.domain.base import RecordModel
 class ContentSettings(RecordModel):
     record_id: ClassVar[str] = "open_notebook:content_settings"
     default_content_processing_engine_doc: Optional[
-        Literal["auto", "docling", "simple"]
-    ] = Field("auto", description="Default Content Processing Engine for Documents")
+        Literal["auto", "docling", "mineru", "simple"]
+    ] = Field(None, description="Default Content Processing Engine for Documents")
     default_content_processing_engine_url: Optional[
         Literal["auto", "firecrawl", "jina", "simple"]
     ] = Field("auto", description="Default Content Processing Engine for URLs")
@@ -23,3 +24,19 @@ class ContentSettings(RecordModel):
         ["en", "pt", "es", "de", "nl", "en-GB", "fr", "de", "hi", "ja"],
         description="Preferred languages for YouTube transcripts",
     )
+    tavily_api_key: Optional[str] = Field(
+        None, description="Tavily Search API Key"
+    )
+    tavily_include_domains: Optional[str] = Field(
+        None, description="Tavily Search Include Domains (comma separated)"
+    )
+
+    @model_validator(mode="after")
+    def set_defaults_from_env(self):
+        if not self.default_content_processing_engine_doc:
+            env_val = os.environ.get("CCORE_DOCUMENT_ENGINE", "auto").strip().lower()
+            if env_val in ["auto", "docling", "mineru", "simple"]:
+                self.default_content_processing_engine_doc = env_val
+            else:
+                self.default_content_processing_engine_doc = "auto"
+        return self

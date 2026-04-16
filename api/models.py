@@ -262,6 +262,8 @@ class SettingsResponse(BaseModel):
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
     youtube_preferred_languages: Optional[List[str]] = None
+    tavily_api_key: Optional[str] = None
+    tavily_include_domains: Optional[str] = None
 
 
 class SettingsUpdate(BaseModel):
@@ -270,6 +272,8 @@ class SettingsUpdate(BaseModel):
     default_embedding_option: Optional[str] = None
     auto_delete_files: Optional[str] = None
     youtube_preferred_languages: Optional[List[str]] = None
+    tavily_api_key: Optional[str] = None
+    tavily_include_domains: Optional[str] = None
 
 
 # Sources API models

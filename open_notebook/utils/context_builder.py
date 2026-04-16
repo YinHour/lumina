@@ -53,7 +53,7 @@ class ContextConfig:
         if self.notes is None:
             self.notes = {}
         if self.priority_weights is None:
-            self.priority_weights = {"source": 100, "note": 50, "insight": 75}
+            self.priority_weights = {"note": 100, "source": 75, "insight": 50}
 
 
 class ContextBuilder:

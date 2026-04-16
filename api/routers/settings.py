@@ -20,6 +20,8 @@ async def get_settings():
             default_embedding_option=settings.default_embedding_option,
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,
+            tavily_api_key=settings.tavily_api_key,
+            tavily_include_domains=settings.tavily_include_domains,
         )
     except Exception as e:
         logger.error(f"Error fetching settings: {str(e)}")
@@ -40,7 +42,7 @@ async def update_settings(settings_update: SettingsUpdate):
             from typing import Literal, cast
 
             settings.default_content_processing_engine_doc = cast(
-                Literal["auto", "docling", "simple"],
+                Literal["auto", "docling", "mineru", "simple"],
                 settings_update.default_content_processing_engine_doc,
             )
         if settings_update.default_content_processing_engine_url is not None:
@@ -67,6 +69,10 @@ async def update_settings(settings_update: SettingsUpdate):
             settings.youtube_preferred_languages = (
                 settings_update.youtube_preferred_languages
             )
+        if settings_update.tavily_api_key is not None:
+            settings.tavily_api_key = settings_update.tavily_api_key
+        if settings_update.tavily_include_domains is not None:
+            settings.tavily_include_domains = settings_update.tavily_include_domains
 
         await settings.update()
 
@@ -76,6 +82,8 @@ async def update_settings(settings_update: SettingsUpdate):
             default_embedding_option=settings.default_embedding_option,
             auto_delete_files=settings.auto_delete_files,
             youtube_preferred_languages=settings.youtube_preferred_languages,
+            tavily_api_key=settings.tavily_api_key,
+            tavily_include_domains=settings.tavily_include_domains,
         )
     except HTTPException:
         raise
