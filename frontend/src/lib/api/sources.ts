@@ -13,6 +13,7 @@ import {
 export const sourcesApi = {
   list: async (params?: {
     notebook_id?: string
+    title_contains?: string
     limit?: number
     offset?: number
     sort_by?: 'created' | 'updated'

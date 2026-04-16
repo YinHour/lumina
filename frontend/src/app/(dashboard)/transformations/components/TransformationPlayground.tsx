@@ -14,6 +14,7 @@ import { ModelSelector } from '@/components/common/ModelSelector'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import rehypeRaw from 'rehype-raw'
 
 interface TransformationPlaygroundProps {
   transformations: Transformation[] | undefined
@@ -126,6 +127,7 @@ export function TransformationPlayground({ transformations, selectedTransformati
                     <div className="prose prose-sm max-w-none dark:prose-invert">
                       <ReactMarkdown
                         remarkPlugins={[remarkGfm]}
+                        rehypePlugins={[rehypeRaw]}
                         components={{
                           table: ({ children }) => (
                             <div className="my-4 overflow-x-auto">

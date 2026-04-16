@@ -285,6 +285,14 @@ export default function SourcesPage() {
     }
   }
 
+  // Cache translations outside the loop to prevent proxy infinite loop detection
+  const tSourcesTypeLink = t.sources?.type?.link ?? 'Link'
+  const tSourcesTypeFile = t.sources?.type?.file ?? 'File'
+  const tSourcesTypeText = t.sources?.type?.text ?? 'Text'
+  const tUntitledSource = t.sources?.untitledSource ?? 'Untitled Source'
+  const tYes = t.sources?.yes ?? 'Yes'
+  const tNo = t.sources?.no ?? 'No'
+
   const getSourceIcon = (source: SourceListResponse) => {
     if (source.asset?.url) return <LinkIcon className="h-4 w-4" />
     if (source.asset?.file_path) return <Upload className="h-4 w-4" />
@@ -292,9 +300,9 @@ export default function SourcesPage() {
   }
 
   const getSourceType = (source: SourceListResponse) => {
-    if (source.asset?.url) return t.sources.type.link
-    if (source.asset?.file_path) return t.sources.type.file
-    return t.sources.type.text
+    if (source.asset?.url) return tSourcesTypeLink
+    if (source.asset?.file_path) return tSourcesTypeFile
+    return tSourcesTypeText
   }
 
   const handleRowClick = useCallback((index: number, sourceId: string) => {
@@ -444,7 +452,7 @@ export default function SourcesPage() {
                   <td className="h-12 px-4">
                     <div className="flex flex-col overflow-hidden">
                       <span className="font-medium truncate">
-                        {source.title || t.sources.untitledSource}
+                        {source.title || tUntitledSource}
                       </span>
                       {source.asset?.url && (
                         <span className="text-xs text-muted-foreground truncate">
@@ -464,12 +472,12 @@ export default function SourcesPage() {
                   </td>
                   <td className="h-12 px-4 text-center hidden lg:table-cell">
                     <Badge variant={source.embedded ? "default" : "secondary"} className="text-xs">
-                      {source.embedded ? t.sources.yes : t.sources.no}
+                      {source.embedded ? tYes : tNo}
                     </Badge>
                   </td>
                   <td className="h-12 px-4 text-center hidden lg:table-cell">
                     <Badge variant={source.kg_extracted ? "default" : "secondary"} className="text-xs">
-                      {source.kg_extracted ? t.sources.yes : t.sources.no}
+                      {source.kg_extracted ? tYes : tNo}
                     </Badge>
                   </td>
                   <td className="h-12 px-4 text-right">
@@ -502,9 +510,9 @@ export default function SourcesPage() {
       <ConfirmDialog
         open={deleteDialog.open}
         onOpenChange={(open) => setDeleteDialog({ open, source: deleteDialog.source })}
-        title={t.sources.delete}
-        description={t.sources.deleteConfirmWithTitle.replace('{title}', deleteDialog.source?.title || t.sources.untitledSource)}
-        confirmText={t.common.delete}
+        title={t.sources?.delete ?? 'Delete'}
+        description={(t.sources?.deleteConfirmWithTitle ?? 'Are you sure you want to delete {title}?').replace('{title}', deleteDialog.source?.title || tUntitledSource)}
+        confirmText={t.common?.delete ?? 'Delete'}
         confirmVariant="destructive"
         onConfirm={handleDeleteConfirm}
       />
