@@ -22,7 +22,6 @@ export default function SourcesPage() {
   const { t, language } = useTranslation()
   const [sources, setSources] = useState<SourceListResponse[]>([])
   const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [sortBy, setSortBy] = useState<'created' | 'updated'>('updated')
@@ -34,66 +33,42 @@ export default function SourcesPage() {
   const router = useRouter()
   const tableRef = useRef<HTMLTableElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
-  const offsetRef = useRef(0)
-  const loadingMoreRef = useRef(false)
-  const hasMoreRef = useRef(true)
+  
+  // Pagination state
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(true)
   const PAGE_SIZE = 30
 
-  const fetchSources = useCallback(async (reset = false) => {
+  const fetchSources = useCallback(async () => {
     try {
-      // Check flags before proceeding
-      if (!reset && (loadingMoreRef.current || !hasMoreRef.current)) {
-        return
-      }
-
-      if (reset) {
-        setLoading(true)
-        offsetRef.current = 0
-        setSources([])
-        hasMoreRef.current = true
-      } else {
-        loadingMoreRef.current = true
-        setLoadingMore(true)
-      }
-
+      setLoading(true)
       const data = await sourcesApi.list({
         limit: PAGE_SIZE,
-        offset: offsetRef.current,
+        offset: (page - 1) * PAGE_SIZE,
         sort_by: sortBy,
         sort_order: sortOrder,
       })
 
-      if (reset) {
-        setSources(data)
-      } else {
-        setSources(prev => [...prev, ...data])
-      }
-
-      // Check if we have more data
-      const hasMoreData = data.length === PAGE_SIZE
-      hasMoreRef.current = hasMoreData
-      offsetRef.current += data.length
+      setSources(data)
+      setHasMore(data.length === PAGE_SIZE)
     } catch (err) {
       console.error('Failed to fetch sources:', err)
       setError(t.sources.failedToLoad)
       toast.error(t.sources.failedToLoad)
     } finally {
       setLoading(false)
-      setLoadingMore(false)
-      loadingMoreRef.current = false
     }
-  }, [sortBy, sortOrder, t.sources.failedToLoad])
+  }, [page, sortBy, sortOrder, t.sources.failedToLoad])
 
   // Initial load and when sort changes
   useEffect(() => {
-    fetchSources(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sortBy, sortOrder])
+    fetchSources()
+  }, [fetchSources])
 
   // Listen for sourcesUpdated event to refresh instantly
   useEffect(() => {
     const handleSourcesUpdated = () => {
-      fetchSources(true)
+      fetchSources()
     }
     window.addEventListener('sourcesUpdated', handleSourcesUpdated)
     return () => window.removeEventListener('sourcesUpdated', handleSourcesUpdated)
@@ -104,55 +79,19 @@ export default function SourcesPage() {
     let interval: NodeJS.Timeout
 
     const pollSources = async () => {
-      // Avoid polling if already loading or loading more
-      if (loading || loadingMoreRef.current) return
+      // Avoid polling if already loading
+      if (loading) return
 
       try {
         const data = await sourcesApi.list({
           limit: PAGE_SIZE,
-          offset: 0,
+          offset: (page - 1) * PAGE_SIZE,
           sort_by: sortBy,
           sort_order: sortOrder,
         })
         
-        setSources(prev => {
-          const newSources = [...prev]
-          data.forEach(updatedSource => {
-            const index = newSources.findIndex(s => s.id === updatedSource.id)
-            if (index !== -1) {
-              // Update existing source
-              newSources[index] = updatedSource
-            } else {
-              // It's a new source, add it if we are at the top (offsetRef is low or we just insert it)
-              // Actually, better to just let fetchSources(true) handle full refresh if we detect a totally new item
-              // But for simplicity, we can insert it if it belongs on the first page
-              if (sortBy === 'created' && sortOrder === 'desc') {
-                 // Push to front
-                 newSources.unshift(updatedSource)
-              } else if (sortBy === 'updated' && sortOrder === 'desc') {
-                 // Push to front
-                 newSources.unshift(updatedSource)
-              }
-            }
-          })
-          
-          // Deduplicate just in case
-          const uniqueIds = new Set()
-          const finalSources = newSources.filter(s => {
-            if (uniqueIds.has(s.id)) return false
-            uniqueIds.add(s.id)
-            return true
-          })
-
-          // Sort finalSources to maintain order
-          finalSources.sort((a, b) => {
-             const timeA = new Date(a[sortBy]).getTime()
-             const timeB = new Date(b[sortBy]).getTime()
-             return sortOrder === 'desc' ? timeB - timeA : timeA - timeB
-          })
-
-          return finalSources
-        })
+        setSources(data)
+        setHasMore(data.length === PAGE_SIZE)
       } catch (err) {
         console.error('Failed to poll sources:', err)
       }
@@ -160,7 +99,7 @@ export default function SourcesPage() {
 
     interval = setInterval(pollSources, 5000)
     return () => clearInterval(interval)
-  }, [sortBy, sortOrder, loading])
+  }, [page, sortBy, sortOrder, loading])
 
   useEffect(() => {
     // Focus the table when component mounts or sources change
@@ -237,42 +176,6 @@ export default function SourcesPage() {
       selectedRow.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
   }
-
-  // Set up scroll listener after sources are loaded
-  useEffect(() => {
-    const scrollContainer = scrollContainerRef.current
-    if (!scrollContainer) return
-
-    let scrollTimeout: NodeJS.Timeout | null = null
-
-    const handleScroll = () => {
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout)
-      }
-
-      scrollTimeout = setTimeout(() => {
-        if (!scrollContainerRef.current) return
-
-        const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current
-        const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-
-        // Load more when within 200px of the bottom
-        if (distanceFromBottom < 200 && !loadingMoreRef.current && hasMoreRef.current) {
-          fetchSources(false)
-        }
-      }, 100)
-    }
-
-    scrollContainer.addEventListener('scroll', handleScroll)
-    handleScroll() // Check on mount
-
-    return () => {
-      scrollContainer.removeEventListener('scroll', handleScroll)
-      if (scrollTimeout) {
-        clearTimeout(scrollTimeout)
-      }
-    }
-  }, [fetchSources, sources.length])
 
   const toggleSort = (field: 'created' | 'updated') => {
     if (sortBy === field) {
@@ -492,18 +395,29 @@ export default function SourcesPage() {
                   </td>
                 </tr>
               ))}
-              {loadingMore && (
-                <tr>
-                  <td colSpan={7} className="h-16 text-center">
-                    <div className="flex items-center justify-center">
-                      <LoadingSpinner />
-                      <span className="ml-2 text-muted-foreground">{t.sources.loadingMore}</span>
-                    </div>
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="flex items-center justify-between mt-4 pt-4 border-t">
+          <Button 
+            variant="outline" 
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page === 1}
+          >
+            {language.startsWith('zh') ? '上一页' : 'Previous'}
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            {language.startsWith('zh') ? `第 ${page} 页` : `Page ${page}`}
+          </span>
+          <Button 
+            variant="outline" 
+            onClick={() => setPage(p => p + 1)}
+            disabled={!hasMore}
+          >
+            {language.startsWith('zh') ? '下一页' : 'Next'}
+          </Button>
         </div>
       </div>
 
