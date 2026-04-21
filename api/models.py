@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 class NotebookCreate(BaseModel):
     name: str = Field(..., description="Name of the notebook")
     description: str = Field(default="", description="Description of the notebook")
+    password: Optional[str] = Field(None, description="Notebook access password")
+    creator_name: Optional[str] = Field(None, description="Name of the notebook creator")
 
 
 class NotebookUpdate(BaseModel):
@@ -15,6 +17,8 @@ class NotebookUpdate(BaseModel):
     archived: Optional[bool] = Field(
         None, description="Whether the notebook is archived"
     )
+    password: Optional[str] = Field(None, description="Notebook access password")
+    creator_name: Optional[str] = Field(None, description="Name of the notebook creator")
 
 
 class NotebookResponse(BaseModel):
@@ -26,6 +30,8 @@ class NotebookResponse(BaseModel):
     updated: str
     source_count: int
     note_count: int
+    password: Optional[str] = None
+    creator_name: Optional[str] = None
 
 
 # Search models

@@ -288,7 +288,6 @@ export default function SourcesPage() {
               <col className="w-[140px]" />
               <col className="w-[100px]" />
               <col className="w-[100px]" />
-              <col className="w-[100px]" />
             </colgroup>
             <thead className="sticky top-0 bg-background z-10">
               <tr className="border-b bg-muted/50">
@@ -323,14 +322,11 @@ export default function SourcesPage() {
                 <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
                   {t.sources.embedded}
                 </th>
-                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
-                  {t.sources.kgExtracted || "已抽取图谱"}
-                </th>
-                <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
-                  {t.common.actions}
-                </th>
-              </tr>
-            </thead>
+                  <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
+                    {t.sources.kgExtracted || "已抽取图谱"}
+                  </th>
+                </tr>
+              </thead>
             <tbody>
               {sources.map((source, index) => (
                 <tr
@@ -382,16 +378,6 @@ export default function SourcesPage() {
                     <Badge variant={source.kg_extracted ? "default" : "secondary"} className="text-xs">
                       {source.kg_extracted ? tYes : tNo}
                     </Badge>
-                  </td>
-                  <td className="h-12 px-4 text-right">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => handleDeleteClick(e, source)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
                   </td>
                 </tr>
               ))}

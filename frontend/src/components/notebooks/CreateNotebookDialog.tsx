@@ -23,6 +23,8 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 const createNotebookSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
+  password: z.string().optional(),
+  creator_name: z.string().optional(),
 })
 
 type CreateNotebookFormData = z.infer<typeof createNotebookSchema>
@@ -46,6 +48,8 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
     defaultValues: {
       name: '',
       description: '',
+      password: '',
+      creator_name: '',
     },
   })
 
@@ -94,6 +98,27 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
               {...register('description')}
               placeholder={t.notebooks.descPlaceholder}
               rows={4}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="notebook-password">Password (Optional)</Label>
+            <Input
+              id="notebook-password"
+              type="password"
+              {...register('password')}
+              placeholder="Leave blank for no password"
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="notebook-creator">Creator Name (Optional)</Label>
+            <Input
+              id="notebook-creator"
+              {...register('creator_name')}
+              placeholder="Your name"
+              autoComplete="off"
             />
           </div>
 

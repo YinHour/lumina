@@ -74,6 +74,8 @@ async def get_notebooks(
                 updated=str(nb.get("updated", "")),
                 source_count=nb.get("source_count", 0),
                 note_count=nb.get("note_count", 0),
+                password=nb.get("password"),
+                creator_name=nb.get("creator_name"),
             )
             for nb in result
         ]
@@ -93,6 +95,8 @@ async def create_notebook(notebook: NotebookCreate):
         new_notebook = Notebook(
             name=notebook.name,
             description=notebook.description,
+            password=notebook.password,
+            creator_name=notebook.creator_name,
         )
         await new_notebook.save()
 
@@ -105,6 +109,8 @@ async def create_notebook(notebook: NotebookCreate):
             updated=str(new_notebook.updated),
             source_count=0,  # New notebook has no sources
             note_count=0,  # New notebook has no notes
+            password=new_notebook.password,
+            creator_name=new_notebook.creator_name,
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -170,6 +176,8 @@ async def get_notebook(notebook_id: str):
             updated=str(nb.get("updated", "")),
             source_count=nb.get("source_count", 0),
             note_count=nb.get("note_count", 0),
+            password=nb.get("password"),
+            creator_name=nb.get("creator_name"),
         )
     except HTTPException:
         raise
@@ -195,6 +203,10 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             notebook.description = notebook_update.description
         if notebook_update.archived is not None:
             notebook.archived = notebook_update.archived
+        if notebook_update.password is not None:
+            notebook.password = notebook_update.password
+        if notebook_update.creator_name is not None:
+            notebook.creator_name = notebook_update.creator_name
 
         await notebook.save()
 
@@ -218,6 +230,8 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
                 updated=str(nb.get("updated", "")),
                 source_count=nb.get("source_count", 0),
                 note_count=nb.get("note_count", 0),
+                password=nb.get("password"),
+                creator_name=nb.get("creator_name"),
             )
 
         # Fallback if query fails
@@ -230,6 +244,8 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             updated=str(notebook.updated),
             source_count=0,
             note_count=0,
+            password=notebook.password,
+            creator_name=notebook.creator_name,
         )
     except HTTPException:
         raise

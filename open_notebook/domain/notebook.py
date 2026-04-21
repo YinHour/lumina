@@ -18,6 +18,8 @@ class Notebook(ObjectModel):
     name: str
     description: str
     archived: Optional[bool] = False
+    password: Optional[str] = None
+    creator_name: Optional[str] = None
 
     @field_validator("name")
     @classmethod
