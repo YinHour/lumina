@@ -1,0 +1,2 @@
+REMOVE FIELD IF EXISTS password ON TABLE notebook;
+REMOVE FIELD IF EXISTS creator_name ON TABLE notebook;

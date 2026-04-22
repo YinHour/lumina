@@ -161,6 +161,7 @@ def parse_source_form_data(
 @router.get("/sources", response_model=List[SourceListResponse])
 async def get_sources(
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
+    title_contains: Optional[str] = Query(None, description="Filter sources by title substring"),
     limit: int = Query(
         50, ge=1, le=100, description="Number of sources to return (1-100)"
     ),
@@ -170,7 +171,7 @@ async def get_sources(
     ),
     sort_order: str = Query("desc", description="Sort order (asc or desc)"),
 ):
-    """Get sources with pagination and sorting support."""
+    """Get sources with pagination, sorting, and filtering support."""
     try:
         # Validate sort parameters
         if sort_by not in ["created", "updated"]:
@@ -184,45 +185,42 @@ async def get_sources(
 
         # Build ORDER BY clause
         order_clause = f"ORDER BY {sort_by} {sort_order.upper()}"
+        
+        # Build conditions and parameters
+        conditions = []
+        params: dict[str, Any] = {
+            "limit": limit,
+            "offset": offset,
+        }
 
-        # Build the query
+        if title_contains:
+            conditions.append("string::contains(string::lowercase(title), string::lowercase($title_contains))")
+            params["title_contains"] = title_contains
+
         if notebook_id:
             # Verify notebook exists first
             notebook = await Notebook.get(notebook_id)
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
+                
+            conditions.append("id IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)")
+            params["notebook_id"] = ensure_record_id(notebook_id)
 
-            # Query sources for specific notebook - include command field with FETCH
-            query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
-                (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded
-                FROM (select value in from reference where out=$notebook_id)
-                {order_clause}
-                LIMIT $limit START $offset
-                FETCH command
-            """
-            result = await repo_query(
-                query,
-                {
-                    "notebook_id": ensure_record_id(notebook_id),
-                    "limit": limit,
-                    "offset": offset,
-                },
-            )
-        else:
-            # Query all sources - include command field with FETCH
-            query = f"""
-                SELECT id, asset, created, title, updated, topics, command,
-                (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
-                (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
-                (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted
-                FROM source
-                {order_clause}
-                LIMIT $limit START $offset
-                FETCH command
-            """
-            result = await repo_query(query, {"limit": limit, "offset": offset})
+        where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        # Query sources - include command field with FETCH
+        query = f"""
+            SELECT id, asset, created, title, updated, topics, command,
+            (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
+            (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+            (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted
+            FROM source
+            {where_clause}
+            {order_clause}
+            LIMIT $limit START $offset
+            FETCH command
+        """
+        result = await repo_query(query, params)
 
         # Convert result to response model
         # Command data is already fetched via FETCH command clause

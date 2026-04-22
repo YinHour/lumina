@@ -84,21 +84,29 @@ async def content_process(state: SourceState) -> dict:
                             env["HF_ENDPOINT"] = "https://hf-mirror.com"
                             
                         try:
+                            # Enable table extraction enhancement
+                            env["MINERU_TABLE_ENABLE"] = "true"
+                            # Enable fast downloads
+                            env["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+                            # Use modelscope for faster downloads
+                            env["MINERU_MODEL_SOURCE"] = "modelscope"
+                            import sys
+                            
+                            logger.info("MinerU may need to download models on first run. Streaming output to console...")
                             subprocess.run([
                                 "mineru",
                                 "-p", file_path,
                                 "-o", temp_dir,
-                                "-m", "auto"
-                            ], capture_output=True, text=True, check=True, env=env)
+                                "-m", "auto",
+                                "--backend", "pipeline",
+                            ], check=True, env=env, stdout=sys.stdout, stderr=sys.stderr)
                         except subprocess.CalledProcessError as e:
                             logger.error(f"MinerU extraction process failed with exit code {e.returncode}")
-                            logger.error(f"MinerU stdout: {e.stdout}")
-                            logger.error(f"MinerU stderr: {e.stderr}")
                             raise
                         
-                        # Find the output directory (mineru creates a dir based on filename)
+                        # Find the output directory (mineru creates a dir based on filename and model name)
                         base_name = os.path.splitext(os.path.basename(file_path))[0]
-                        out_dir = os.path.join(temp_dir, base_name)
+                        out_dir = os.path.join(temp_dir, base_name, "auto")
                         
                         md_content = ""
                         if os.path.exists(out_dir):
@@ -107,10 +115,21 @@ async def content_process(state: SourceState) -> dict:
                                     with open(os.path.join(out_dir, file), "r", encoding="utf-8") as f:
                                         md_content = f.read()
                                     break
+                        elif os.path.exists(os.path.join(temp_dir, base_name)):
+                            # Fallback in case mineru behavior changes and doesn't nest inside 'auto'
+                            for file in os.listdir(os.path.join(temp_dir, base_name)):
+                                if file.endswith(".md"):
+                                    with open(os.path.join(temp_dir, base_name, file), "r", encoding="utf-8") as f:
+                                        md_content = f.read()
+                                    break
                         
                         if md_content:
                             logger.info(f"Successfully extracted {len(md_content)} chars using MinerU.")
                             state["content"] = md_content
+                            if not state.get("title") and "file_path" in state and state["file_path"]:
+                                state["title"] = os.path.basename(state["file_path"])
+                            # Bypass content_core's Pydantic validation which only allows 'auto', 'simple', 'docling'
+                            state["document_engine"] = "auto"
                             return ProcessSourceState(**state)
                         else:
                             logger.warning("MinerU failed to produce markdown output. Falling back to simple engine.")

@@ -1,0 +1,2 @@
+DEFINE FIELD IF NOT EXISTS password ON TABLE notebook TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS creator_name ON TABLE notebook TYPE option<string>;

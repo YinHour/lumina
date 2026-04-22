@@ -16,7 +16,6 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { searchApi } from '@/lib/api/search'
 import { sourcesApi } from '@/lib/api/sources'
 import { useSources, useAddSourcesToNotebook } from '@/lib/hooks/use-sources'
 import { SourceListResponse } from '@/lib/types/api'
@@ -82,29 +81,13 @@ export function AddExistingSourceDialog({
 
     try {
       setIsSearching(true)
-      const response = await searchApi.search({
-        query: debouncedSearchQuery,
-        type: 'text',
-        search_sources: true,
-        search_notes: false,
+      const sources = await sourcesApi.list({
+        title_contains: debouncedSearchQuery,
         limit: 100,
-        minimum_score: 0.01,
+        offset: 0,
+        sort_by: 'created',
+        sort_order: 'desc',
       })
-
-      // Since we set search_sources=true and search_notes=false,
-      // the API only returns sources, no need to filter
-      const sources = response.results.map(r => ({
-        id: r.parent_id,
-        title: r.title || 'Untitled',
-        topics: [],
-        asset: null,
-        embedded: false,
-        embedded_chunks: 0,
-        insights_count: 0,
-        kg_extracted: false,
-        created: r.created,
-        updated: r.updated,
-      })) as SourceListResponse[]
 
       setFilteredSources(sources)
     } catch (error) {

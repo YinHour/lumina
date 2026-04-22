@@ -7,6 +7,8 @@ export interface NotebookResponse {
   updated: string
   source_count: number
   note_count: number
+  password?: string | null
+  creator_name?: string | null
 }
 
 export interface NoteResponse {
@@ -66,12 +68,16 @@ export interface SettingsResponse {
 export interface CreateNotebookRequest {
   name: string
   description?: string
+  password?: string
+  creator_name?: string
 }
 
 export interface UpdateNotebookRequest {
   name?: string
   description?: string
   archived?: boolean
+  password?: string
+  creator_name?: string
 }
 
 export interface NotebookDeletePreview {

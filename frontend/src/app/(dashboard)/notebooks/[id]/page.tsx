@@ -16,7 +16,9 @@ import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { cn } from '@/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { FileText, StickyNote, MessageSquare } from 'lucide-react'
+import { FileText, StickyNote, MessageSquare, Lock } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 
 export type ContextMode = 'off' | 'insights' | 'full'
 
@@ -57,6 +59,34 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     sources: {},
     notes: {}
   })
+
+  // Password state
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  const [passwordInput, setPasswordInput] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+
+  useEffect(() => {
+    if (!notebook?.password) {
+      setIsUnlocked(true)
+    } else {
+      setIsUnlocked(false)
+    }
+  }, [notebook])
+
+  const handleUnlock = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (notebook?.password) {
+      if (
+        passwordInput === notebook.password ||
+        passwordInput === process.env.NEXT_PUBLIC_MASTER_NOTEBOOK_PASSWORD
+      ) {
+        setIsUnlocked(true)
+        setPasswordError('')
+      } else {
+        setPasswordError('Incorrect password')
+      }
+    }
+  }
 
   // Initialize and update selections when sources load or change
   useEffect(() => {
@@ -121,6 +151,43 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         <div className="p-6">
           <h1 className="text-2xl font-bold mb-4">{t.notebooks.notFound}</h1>
           <p className="text-muted-foreground">{t.notebooks.notFoundDesc}</p>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (notebook.password && !isUnlocked) {
+    return (
+      <AppShell>
+        <div className="flex-1 flex flex-col items-center justify-center p-6 h-[calc(100vh-4rem)]">
+          <div className="max-w-md w-full space-y-6 bg-card p-8 rounded-xl border shadow-sm">
+            <div className="space-y-2 text-center">
+              <div className="mx-auto w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+                <Lock className="h-6 w-6 text-primary" />
+              </div>
+              <h2 className="text-2xl font-bold tracking-tight">Protected Notebook</h2>
+              <p className="text-muted-foreground text-sm">
+                This notebook requires a password to access.
+              </p>
+            </div>
+            <form onSubmit={handleUnlock} className="space-y-4">
+              <div className="space-y-2">
+                <Input
+                  type="password"
+                  placeholder="Enter password"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  autoFocus
+                />
+                {passwordError && (
+                  <p className="text-sm text-destructive">{passwordError}</p>
+                )}
+              </div>
+              <Button type="submit" className="w-full">
+                Unlock
+              </Button>
+            </form>
+          </div>
         </div>
       </AppShell>
     )

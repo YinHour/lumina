@@ -12,13 +12,6 @@ GHCR_IMAGE := ghcr.io/lfnovo/open-notebook
 # Build platforms
 PLATFORMS := linux/amd64,linux/arm64
 
-init-mac:
-	@echo "📦 Installing dependencies using uv sync..."
-	uv sync
-	@echo "🔧 Applying compatibility patches for MinerU..."
-	uv run python scripts/patch_mineru.py
-	@echo "✅ Initialization complete! You can now run MinerU on Mac."
-
 database:
 	docker compose up -d surrealdb
 
