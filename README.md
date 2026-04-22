@@ -11,17 +11,16 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/lfnovo/open-notebook">
+  <a href="https://github.com/YinHour/lumina">
     <img src="docs/assets/hero.svg" alt="Logo">
   </a>
 
-  <h3 align="center">Open Notebook</h3>
+  <h3 align="center">Lumina (Open Notebook)</h3>
 
   <p align="center">
     An open source, privacy-focused alternative to Google's Notebook LM!
-    <br /><strong>Join our <a href="https://discord.gg/37XJPXfz2w">Discord server</a> for help, to share workflow ideas, and suggest features!</strong>
     <br />
-    <a href="https://www.open-notebook.ai"><strong>Checkout our website »</strong></a>
+    <a href="https://github.com/YinHour/lumina"><strong>View on GitHub »</strong></a>
     <br />
     <br />
     <a href="docs/0-START-HERE/index.md">📚 Get Started</a>
@@ -65,7 +64,7 @@ In a world dominated by Artificial Intelligence, having the ability to think �
 - 💬 **Chat with context** - AI conversations powered by your research
 - 🌐 **Multi-language UI** - English, Portuguese, Chinese (Simplified & Traditional), Japanese, Russian, and Bengali support
 
-Learn more about our project at [https://www.open-notebook.ai](https://www.open-notebook.ai)
+Learn more about this project at [https://github.com/YinHour/lumina](https://github.com/YinHour/lumina)
 
 ---
 
@@ -104,7 +103,7 @@ Learn more about our project at [https://www.open-notebook.ai](https://www.open-
 
 **Option A:** Download directly
 ```bash
-curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-notebook/main/docker-compose.yml
+curl -o docker-compose.yml https://raw.githubusercontent.com/YinHour/lumina/main/docker-compose.yml
 ```
 
 **Option B:** Create the file manually
@@ -131,7 +130,7 @@ services:
       - OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
       - SURREAL_URL=ws://surrealdb:8000/rpc
       - SURREAL_USER=root
-      - SURREAL_PASSWORD=root
+      - SURREAL_PASSWORD=***
       - SURREAL_NAMESPACE=open_notebook
       - SURREAL_DATABASE=open_notebook
     volumes:
@@ -180,17 +179,14 @@ Done! You're ready to create your first notebook.
 ---
 
 ### 📖 Need Help?
-
-- **🤖 AI Installation Assistant**: [CustomGPT to help you install](https://chatgpt.com/g/g-68776e2765b48191bd1bae3f30212631-open-notebook-installation-assistant)
 - **🆘 Troubleshooting**: [5-minute troubleshooting guide](docs/6-TROUBLESHOOTING/quick-fixes.md)
-- **💬 Community Support**: [Discord Server](https://discord.gg/37XJPXfz2w)
-- **🐛 Report Issues**: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
+- **🐛 Report Issues**: [GitHub Issues](https://github.com/YinHour/lumina/issues)
 
 ---
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=lfnovo/open-notebook&type=date&legend=top-left)](https://www.star-history.com/#lfnovo/open-notebook&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=YinHour/lumina&type=date&legend=top-left)](https://www.star-history.com/#YinHour/lumina&type=date&legend=top-left)
 
 
 ## Provider Support Matrix
@@ -238,6 +234,9 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 - **🔐 Optional Password Protection**: Secure public deployments with authentication
 - **📊 Fine-Grained Context Control**: Choose exactly what to share with AI models
 - **📎 Citations**: Get answers with proper source citations
+- **🕸️ Web Search Integration**: Real-time联网搜索 powered by Tavily search API
+- **🗺️ Knowledge Graph Extraction**: Automatic entity and relationship extraction from sources
+- **📄 MinerU Integration**: Enhanced PDF parsing with MinerU for complex document layouts
 
 
 ## Podcast Feature
@@ -280,6 +279,9 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 - **Bookmark Integration**: Connect with your favorite bookmarking apps
 
 ### Recently Completed ✅
+- **Knowledge Graph Extraction**: Automatic entity and relationship extraction from sources
+- **MinerU Integration**: Enhanced PDF parsing for complex document layouts
+- **Web Search Integration**: Real-time联网搜索 via Tavily API
 - **Next.js Frontend**: Modern React-based frontend with improved performance
 - **Comprehensive REST API**: Full programmatic access to all functionality
 - **Multi-Model Support**: 18+ AI providers including OpenAI, Anthropic, Ollama, LM Studio
@@ -288,64 +290,63 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 - **Enhanced Citations**: Improved layout and finer control for source citations
 - **Multiple Chat Sessions**: Manage different conversations within notebooks
 
-See the [open issues](https://github.com/lfnovo/open-notebook/issues) for a full list of proposed features and known issues.
+See the [open issues](https://github.com/YinHour/lumina/issues) for a full list of proposed features and known issues.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
-## 📖 Need Help?
-- **🤖 AI Installation Assistant**: We have a [CustomGPT built to help you install Open Notebook](https://chatgpt.com/g/g-68776e2765b48191bd1bae3f30212631-open-notebook-installation-assistant) - it will guide you through each step!
-- **New to Open Notebook?** Start with our [Getting Started Guide](docs/0-START-HERE/index.md)
+### 📖 Need Help?
+- **New to Lumina?** Start with our [Getting Started Guide](docs/0-START-HERE/index.md)
 - **Need installation help?** Check our [Installation Guide](docs/1-INSTALLATION/index.md)
 - **Want to see it in action?** Try our [Quick Start Tutorial](docs/0-START-HERE/quick-start.md)
 
 ## 🤝 Community & Contributing
 
 ### Join the Community
-- 💬 **[Discord Server](https://discord.gg/37XJPXfz2w)** - Get help, share ideas, and connect with other users
-- 🐛 **[GitHub Issues](https://github.com/lfnovo/open-notebook/issues)** - Report bugs and request features
-- ⭐ **Star this repo** - Show your support and help others discover Open Notebook
+- 💬 **Discord** - Get help, share ideas, and connect with other users
+- 🐛 **[GitHub Issues](https://github.com/YinHour/lumina/issues)** - Report bugs and request features
+- ⭐ **Star this repo** - Show your support and help others discover this project
 
 ### Contributing
 We welcome contributions! We're especially looking for help with:
 - **Frontend Development**: Help improve our modern Next.js/React UI
-- **Testing & Bug Fixes**: Make Open Notebook more robust
+- **Testing & Bug Fixes**: Make Lumina more robust
 - **Feature Development**: Build the coolest research tool together
 - **Documentation**: Improve guides and tutorials
 
-**Current Tech Stack**: Python, FastAPI, Next.js, React, SurrealDB
+**Current Tech Stack**: Python, FastAPI, Next.js 16, React 19, SurrealDB
 **Future Roadmap**: Real-time updates, enhanced async processing
 
-See our [Contributing Guide](CONTRIBUTING.md) for detailed information on how to get started.
+See our [Contributing Guide](docs/7-DEVELOPMENT/contributing.md) for detailed information on how to get started.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 ## 📄 License
 
-Open Notebook is MIT licensed. See the [LICENSE](LICENSE) file for details.
+Lumina is MIT licensed. See the [LICENSE](LICENSE) file for details.
 
 
 **Community Support**:
-- 💬 [Discord Server](https://discord.gg/37XJPXfz2w) - Get help, share ideas, and connect with users
-- 🐛 [GitHub Issues](https://github.com/lfnovo/open-notebook/issues) - Report bugs and request features
-- 🌐 [Website](https://www.open-notebook.ai) - Learn more about the project
+- 💬 Discord - Get help, share ideas, and connect with users
+- 🐛 [GitHub Issues](https://github.com/YinHour/lumina/issues) - Report bugs and request features
+- 🌐 [GitHub Repository](https://github.com/YinHour/lumina) - View source code and releases
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/lfnovo/open-notebook.svg?style=for-the-badge
-[contributors-url]: https://github.com/lfnovo/open-notebook/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/lfnovo/open-notebook.svg?style=for-the-badge
-[forks-url]: https://github.com/lfnovo/open-notebook/network/members
-[stars-shield]: https://img.shields.io/github/stars/lfnovo/open-notebook.svg?style=for-the-badge
-[stars-url]: https://github.com/lfnovo/open-notebook/stargazers
-[issues-shield]: https://img.shields.io/github/issues/lfnovo/open-notebook.svg?style=for-the-badge
-[issues-url]: https://github.com/lfnovo/open-notebook/issues
-[license-shield]: https://img.shields.io/github/license/lfnovo/open-notebook.svg?style=for-the-badge
-[license-url]: https://github.com/lfnovo/open-notebook/blob/master/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/YinHour/lumina.svg?style=for-the-badge
+[contributors-url]: https://github.com/YinHour/lumina/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/YinHour/lumina.svg?style=for-the-badge
+[forks-url]: https://github.com/YinHour/lumina/network/members
+[stars-shield]: https://img.shields.io/github/stars/YinHour/lumina.svg?style=for-the-badge
+[stars-url]: https://github.com/YinHour/lumina/stargazers
+[issues-shield]: https://img.shields.io/github/issues/YinHour/lumina.svg?style=for-the-badge
+[issues-url]: https://github.com/YinHour/lumina/issues
+[license-shield]: https://img.shields.io/github/license/YinHour/lumina.svg?style=for-the-badge
+[license-url]: https://github.com/YinHour/lumina/blob/main/LICENSE
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/lfnovo
 [product-screenshot]: images/screenshot.png

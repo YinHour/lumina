@@ -17,8 +17,8 @@ Before you start, ensure you have the following installed:
 
 ```bash
 # Clone the repository
-git clone https://github.com/lfnovo/open-notebook.git
-cd open-notebook
+git clone https://github.com/YinHour/lumina.git
+cd lumina
 
 # Add upstream remote for keeping your fork updated
 git remote add upstream https://github.com/lfnovo/open-notebook.git
