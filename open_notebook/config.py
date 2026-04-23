@@ -7,6 +7,8 @@ DATA_FOLDER = "./data"
 sqlite_folder = f"{DATA_FOLDER}/sqlite-db"
 os.makedirs(sqlite_folder, exist_ok=True)
 LANGGRAPH_CHECKPOINT_FILE = f"{sqlite_folder}/checkpoints.sqlite"
+LANGGRAPH_CHAT_CHECKPOINT_FILE = f"{sqlite_folder}/chat_checkpoints.sqlite"
+LANGGRAPH_SOURCE_CHAT_CHECKPOINT_FILE = f"{sqlite_folder}/source_chat_checkpoints.sqlite"
 
 # UPLOADS FOLDER
 UPLOADS_FOLDER = f"{DATA_FOLDER}/uploads"

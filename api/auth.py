@@ -1,24 +1,88 @@
-from typing import Optional
+import hashlib
+import os
+import time
+from typing import Any, Dict, List, Optional
 
+import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+from api.password_utils import verify_password
+from open_notebook.database.repository import db_connection, parse_record_ids
 from open_notebook.utils.encryption import get_secret_from_env
+
+JWT_ALGORITHM = "HS256"
+
+
+def _get_jwt_secret() -> str:
+    """Derive JWT secret from encryption key."""
+    secret = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
+    if not secret:
+        return "lumina-dev-jwt-secret-change-in-production"
+    return secret
+
+
+def _decode_jwt_token(token: str) -> Optional[Dict[str, Any]]:
+    """Decode and validate a JWT token."""
+    try:
+        return jwt.decode(token, _get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.debug(f"Invalid JWT token: {e}")
+        return None
+
+
+# Cache for "has users" check (avoids DB query on every request)
+_has_users_cache: Optional[bool] = None
+_cache_time: float = 0
+_CACHE_TTL = 30  # seconds
+
+
+async def _check_has_users() -> bool:
+    """Check if any users exist in the database (with caching)."""
+    global _has_users_cache, _cache_time
+    now = time.time()
+    if _has_users_cache is not None and (now - _cache_time) < _CACHE_TTL:
+        return _has_users_cache
+
+    try:
+        async with db_connection() as conn:
+            result = await conn.query("SELECT count() FROM app_user GROUP ALL")
+            if isinstance(result, list) and result:
+                # Flatten nested result
+                row = result[0]
+                if isinstance(row, list) and row:
+                    row = row[0]
+                if isinstance(row, dict) and row.get("count", 0) > 0:
+                    _has_users_cache = True
+                    _cache_time = now
+                    return True
+            _has_users_cache = False
+            _cache_time = now
+            return False
+    except Exception as e:
+        logger.debug(f"Failed to check users: {e}")
+        return False
 
 
 class PasswordAuthMiddleware(BaseHTTPMiddleware):
     """
-    Middleware to check password authentication for all API requests.
-    Always active with default password if OPEN_NOTEBOOK_PASSWORD is not set.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
+    Middleware for password authentication with dual-mode support:
+    - Legacy mode: OPEN_NOTEBOOK_PASSWORD env var (plain text comparison)
+    - Database mode: JWT tokens validated against app_user table
+
+    If legacy password is set, it takes priority (backward compatibility).
+    If no legacy password but users exist in DB, JWT validation is required.
     """
 
     def __init__(self, app, excluded_paths: Optional[list] = None):
         super().__init__(app)
-        self.password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
+        self.legacy_password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
         self.excluded_paths = excluded_paths or [
             "/",
             "/health",
@@ -28,21 +92,56 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
         ]
 
     async def dispatch(self, request: Request, call_next):
-        # Skip authentication if no password is set
-        if not self.password:
-            return await call_next(request)
-
-        # Skip authentication for excluded paths
+        # Skip for excluded paths
         if request.url.path in self.excluded_paths:
             return await call_next(request)
 
-        # Skip authentication for CORS preflight requests (OPTIONS)
+        # Skip for CORS preflight
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Check authorization header
+        # Skip for auth endpoints (they handle their own auth)
+        if request.url.path.startswith("/api/auth/"):
+            return await call_next(request)
+
         auth_header = request.headers.get("Authorization")
 
+        # --- Legacy mode: env var password ---
+        if self.legacy_password:
+            if not auth_header:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Missing authorization header"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            try:
+                scheme, credentials = auth_header.split(" ", 1)
+                if scheme.lower() != "bearer":
+                    raise ValueError("Invalid authentication scheme")
+            except ValueError:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid authorization header format"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            if credentials != self.legacy_password:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Invalid password"},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            return await call_next(request)
+
+        # --- Database mode: JWT validation ---
+        has_users = await _check_has_users()
+        if not has_users:
+            # No users and no legacy password = no auth required
+            return await call_next(request)
+
+        # Users exist - require JWT
         if not auth_header:
             return JSONResponse(
                 status_code=401,
@@ -50,9 +149,8 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Expected format: "Bearer {password}"
         try:
-            scheme, credentials = auth_header.split(" ", 1)
+            scheme, token = auth_header.split(" ", 1)
             if scheme.lower() != "bearer":
                 raise ValueError("Invalid authentication scheme")
         except ValueError:
@@ -62,17 +160,15 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Check password
-        if credentials != self.password:
+        payload = _decode_jwt_token(token)
+        if not payload:
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Invalid password"},
+                content={"detail": "Invalid or expired token"},
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        # Password is correct, proceed with the request
-        response = await call_next(request)
-        return response
+        return await call_next(request)
 
 
 # Optional: HTTPBearer security scheme for OpenAPI documentation
@@ -83,32 +179,32 @@ def check_api_password(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> bool:
     """
-    Utility function to check API password.
-    Can be used as a dependency in individual routes if needed.
-    Supports Docker secrets via OPEN_NOTEBOOK_PASSWORD_FILE.
-    Returns True without checking credentials if OPEN_NOTEBOOK_PASSWORD is not configured.
-    Raises 401 if credentials are missing or don't match the configured password.
+    Utility function to check API password for route-level auth.
+    Supports both legacy password and JWT tokens.
     """
-    password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
+    legacy_password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
 
-    # No password configured - skip authentication
-    if not password:
+    if not credentials:
+        # No credentials - check if auth is even required
+        if legacy_password:
+            raise HTTPException(
+                status_code=401,
+                detail="Missing authorization",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return True
 
-    # No credentials provided
-    if not credentials:
-        raise HTTPException(
-            status_code=401,
-            detail="Missing authorization",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # Try legacy password first
+    if legacy_password and credentials.credentials == legacy_password:
+        return True
 
-    # Check password
-    if credentials.credentials != password:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    # Try JWT
+    payload = _decode_jwt_token(credentials.credentials)
+    if payload:
+        return True
 
-    return True
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid authorization",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
