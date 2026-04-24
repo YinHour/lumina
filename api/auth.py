@@ -108,10 +108,14 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 )
 
             if credentials == self.legacy_password:
+                request.state.user_id = None
+                request.state.username = None
                 return await call_next(request)
 
             payload = await validate_jwt_token(credentials)
             if payload:
+                request.state.user_id = payload.get("sub")
+                request.state.username = payload.get("username")
                 return await call_next(request)
 
             return JSONResponse(
@@ -152,6 +156,10 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Invalid or expired token"},
                 headers={"WWW-Authenticate": "Bearer"},
             )
+
+        # Extract user identity for downstream route use
+        request.state.user_id = payload.get("sub")
+        request.state.username = payload.get("username")
 
         return await call_next(request)
 
