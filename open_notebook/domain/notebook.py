@@ -20,6 +20,8 @@ class Notebook(ObjectModel):
     archived: Optional[bool] = False
     password: Optional[str] = None
     creator_name: Optional[str] = None
+    owner_id: Optional[str] = None
+    visibility: Literal["private", "public"] = "private"
 
     @field_validator("name")
     @classmethod
@@ -298,6 +300,8 @@ class Source(ObjectModel):
     command: Optional[Union[str, RecordID]] = Field(
         default=None, description="Link to surreal-commands processing job"
     )
+    owner_id: Optional[str] = None
+    visibility: Literal["private", "public"] = "private"
 
     @field_validator("command", mode="before")
     @classmethod
