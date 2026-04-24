@@ -1,20 +1,20 @@
 # Quick Start - Development
 
-Get Open Notebook running locally in 5 minutes.
+Get Lumina running locally in 5 minutes.
 
 ## Prerequisites
 
 - **Python 3.11+**
 - **Git**
 - **uv** (package manager) - install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- **Docker** (optional, for SurrealDB)
+- **SurrealDB v2 binary or Docker** (optional if you let `./dev-init.sh` auto-start the local binary)
 
 ## 1. Clone the Repository (2 min)
 
 ```bash
 # Fork the repository on GitHub first, then clone your fork
-git clone https://github.com/YOUR_USERNAME/open-notebook.git
-cd open-notebook
+git clone https://github.com/YOUR_USERNAME/lumina.git
+cd lumina
 
 # Add upstream remote for updates
 git remote add upstream https://github.com/lfnovo/open-notebook.git
@@ -32,26 +32,30 @@ uv --version
 
 ## 3. Start Services (1 min)
 
-In separate terminal windows:
+```bash
+cp .env.example .env
+./dev-init.sh
+```
+
+Recommended local test flags in `.env`:
 
 ```bash
-# Terminal 1: Start SurrealDB (database)
-make database
-# or: docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v2 start --user root --pass password --bind 0.0.0.0:8000 memory
-
-# Terminal 2: Start API (backend on port 5055)
-make api
-# or: uv run --env-file .env uvicorn api.main:app --host 0.0.0.0 --port 5055
-
-# Terminal 3: Start Frontend (UI on port 3000)
-cd frontend && npm run dev
+EMAIL_PROVIDER=debug
+ALLOW_PUBLIC_REGISTRATION=true
 ```
 
 ## 4. Verify Everything Works (instant)
 
-- **API Health**: http://localhost:5055/health → should return `{"status": "ok"}`
+- **API Health**: http://localhost:5055/health → should return `{"status": "healthy"}`
+- **Auth Status**: http://localhost:5055/api/auth/status → should return JSON
 - **API Docs**: http://localhost:5055/docs → interactive API documentation
 - **Frontend**: http://localhost:3000 → Open Notebook UI
+
+You can also verify the auth UI routes:
+
+- http://localhost:3000/login
+- http://localhost:3000/register
+- http://localhost:3000/forgot-password
 
 **All three show up?** ✅ You're ready to develop!
 
@@ -117,7 +121,7 @@ make ruff
 make lint
 
 # Run the full stack
-make start-all
+./dev-init.sh
 
 # View API documentation
 open http://localhost:5055/docs

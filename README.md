@@ -231,7 +231,7 @@ Thanks to the [Esperanto](https://github.com/lfnovo/esperanto) library, we suppo
 - **⚡ Reasoning Model Support**: Full support for thinking models like DeepSeek-R1 and Qwen3
 - **🔧 Content Transformations**: Powerful customizable actions to summarize and extract insights
 - **🌐 Comprehensive REST API**: Full programmatic access for custom integrations [![API Docs](https://img.shields.io/badge/API-Documentation-blue?style=flat-square)](http://localhost:5055/docs)
-- **🔐 Optional Password Protection**: Secure public deployments with authentication
+- **🔐 Built-in Authentication**: Username/password login, JWT sessions, password change, and optional self-registration flows
 - **📊 Fine-Grained Context Control**: Choose exactly what to share with AI models
 - **📎 Citations**: Get answers with proper source citations
 - **🕸️ Web Search Integration**: Real-time联网搜索 powered by Tavily search API

@@ -1,0 +1,9 @@
+-- Migration 19: Repair verification_code schema after migration 18 inline-comment truncation
+
+DEFINE FIELD IF NOT EXISTS expires_at ON TABLE verification_code TYPE datetime;
+DEFINE FIELD IF NOT EXISTS used ON TABLE verification_code TYPE bool DEFAULT false;
+DEFINE FIELD IF NOT EXISTS attempts ON TABLE verification_code TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS created ON TABLE verification_code TYPE datetime DEFAULT time::now();
+
+DEFINE INDEX IF NOT EXISTS idx_verification_code_email_purpose ON TABLE verification_code COLUMNS email, purpose;
+DEFINE INDEX IF NOT EXISTS idx_verification_code_code ON TABLE verification_code COLUMNS code;
