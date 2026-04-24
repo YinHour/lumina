@@ -1,0 +1,20 @@
+-- Migration 18: Email verification codes for registration and password reset
+-- Stores temporary 6-digit codes sent to user emails for identity verification.
+
+-- Create the verification_code table
+DEFINE TABLE IF NOT EXISTS verification_code SCHEMAFULL;
+
+-- Fields
+DEFINE FIELD IF NOT EXISTS email ON TABLE verification_code TYPE string;
+DEFINE FIELD IF NOT EXISTS code ON TABLE verification_code TYPE string;
+DEFINE FIELD IF NOT EXISTS purpose ON TABLE verification_code TYPE string;
+DEFINE FIELD IF NOT EXISTS expires_at ON TABLE verification_code TYPE datetime;
+DEFINE FIELD IF NOT EXISTS used ON TABLE verification_code TYPE bool DEFAULT false;
+DEFINE FIELD IF NOT EXISTS attempts ON TABLE verification_code TYPE int DEFAULT 0;
+DEFINE FIELD IF NOT EXISTS created ON TABLE verification_code TYPE datetime DEFAULT time::now();
+
+-- Index: unique (email + purpose) to ensure one active code per email per purpose
+DEFINE INDEX IF NOT EXISTS idx_verification_code_email_purpose ON TABLE verification_code COLUMNS email, purpose;
+
+-- Index: code lookup for fast verification
+DEFINE INDEX IF NOT EXISTS idx_verification_code_code ON TABLE verification_code COLUMNS code;

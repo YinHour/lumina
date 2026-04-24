@@ -198,6 +198,7 @@ export function LoginForm() {
                 <button
                   type="button"
                   className="transition hover:text-stone-800"
+                  onClick={() => router.push('/forgot-password')}
                 >
                   {t.auth.forgotPassword}
                 </button>
@@ -226,6 +227,7 @@ export function LoginForm() {
                 <button
                   type="button"
                   className="text-[22px] text-stone-600 transition hover:text-stone-800"
+                  onClick={() => router.push('/register')}
                 >
                   {t.auth.registerNewAccount}
                 </button>

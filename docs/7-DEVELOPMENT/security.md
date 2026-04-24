@@ -138,10 +138,16 @@ Never pass user-provided file paths directly to file reading or content extracti
 
 ### Authentication
 
-Open Notebook currently uses simple password-based middleware (`PasswordAuthMiddleware`). This is suitable for single-user self-hosted deployments but should be hardened for production:
+Open Notebook currently uses dual-mode middleware (`PasswordAuthMiddleware`):
 
-- Change the default password (`OPEN_NOTEBOOK_PASSWORD`)
-- Change the default encryption key (`OPEN_NOTEBOOK_ENCRYPTION_KEY`)
+- Legacy shared-password mode via `OPEN_NOTEBOOK_PASSWORD`
+- Preferred database-backed username/password login with JWT bearer tokens
+
+For production and maintained local development flows:
+
+- Prefer database users + JWT sessions
+- Treat `OPEN_NOTEBOOK_PASSWORD` as backward-compatibility mode
+- Change the encryption key (`OPEN_NOTEBOOK_ENCRYPTION_KEY`)
 - Consider deploying behind a reverse proxy with proper authentication (OAuth, OIDC)
 
 ### CORS
@@ -162,7 +168,7 @@ The default CORS configuration allows all origins (`allow_origins=["*"]`). This 
 
 ### Environment variables
 
-- Sensitive values (API keys, passwords, encryption keys) should never appear in logs
+- Sensitive values (API keys, raw passwords, JWT secrets, encryption keys) should never appear in logs
 - Use `loguru` with caution — avoid logging full request bodies or environment dumps
 - The Docker container runs as root by default; consider running as a non-root user
 

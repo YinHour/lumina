@@ -1,46 +1,27 @@
-import hashlib
-import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
-import jwt
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
-from api.password_utils import verify_password
-from open_notebook.database.repository import db_connection, parse_record_ids
+from api.jwt_auth import validate_jwt_token
+from open_notebook.database.repository import db_connection
 from open_notebook.utils.encryption import get_secret_from_env
-
-JWT_ALGORITHM = "HS256"
-
-
-def _get_jwt_secret() -> str:
-    """Derive JWT secret from encryption key."""
-    secret = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
-    if not secret:
-        return "lumina-dev-jwt-secret-change-in-production"
-    return secret
-
-
-def _decode_jwt_token(token: str) -> Optional[Dict[str, Any]]:
-    """Decode and validate a JWT token."""
-    try:
-        return jwt.decode(token, _get_jwt_secret(), algorithms=[JWT_ALGORITHM])
-    except jwt.ExpiredSignatureError:
-        logger.warning("JWT token expired")
-        return None
-    except jwt.InvalidTokenError as e:
-        logger.debug(f"Invalid JWT token: {e}")
-        return None
-
 
 # Cache for "has users" check (avoids DB query on every request)
 _has_users_cache: Optional[bool] = None
 _cache_time: float = 0
 _CACHE_TTL = 30  # seconds
+
+
+def invalidate_has_users_cache() -> None:
+    """Clear the cached result for user existence checks."""
+    global _has_users_cache, _cache_time
+    _has_users_cache = None
+    _cache_time = 0
 
 
 async def _check_has_users() -> bool:
@@ -126,14 +107,18 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                     headers={"WWW-Authenticate": "Bearer"},
                 )
 
-            if credentials != self.legacy_password:
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": "Invalid password"},
-                    headers={"WWW-Authenticate": "Bearer"},
-                )
+            if credentials == self.legacy_password:
+                return await call_next(request)
 
-            return await call_next(request)
+            payload = await validate_jwt_token(credentials)
+            if payload:
+                return await call_next(request)
+
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid password or token"},
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
         # --- Database mode: JWT validation ---
         has_users = await _check_has_users()
@@ -160,7 +145,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        payload = _decode_jwt_token(token)
+        payload = await validate_jwt_token(token)
         if not payload:
             return JSONResponse(
                 status_code=401,
@@ -175,7 +160,7 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
 security = HTTPBearer(auto_error=False)
 
 
-def check_api_password(
+async def check_api_password(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
 ) -> bool:
     """
@@ -199,7 +184,7 @@ def check_api_password(
         return True
 
     # Try JWT
-    payload = _decode_jwt_token(credentials.credentials)
+    payload = await validate_jwt_token(credentials.credentials)
     if payload:
         return True
 

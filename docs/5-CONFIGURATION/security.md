@@ -1,6 +1,6 @@
 # Security Configuration
 
-Protect your Open Notebook deployment with password authentication and production hardening.
+Protect your Open Notebook deployment with the built-in authentication system and production hardening.
 
 ---
 
@@ -30,7 +30,8 @@ Any string works — it will be securely derived via SHA-256 internally. Use a s
 
 | Setting | Default | Security Level |
 |---------|---------|----------------|
-| Password | `open-notebook-change-me` | Development only |
+| Username/password login | No default database user is guaranteed | Configure during setup |
+| Legacy password mode | Disabled unless `OPEN_NOTEBOOK_PASSWORD` is set | Backward compatibility only |
 | Encryption Key | **None** (must be configured) | Required for API key storage |
 
 **The encryption key has no default.** You must set `OPEN_NOTEBOOK_ENCRYPTION_KEY` before using the API key configuration feature. Without it, encrypting/decrypting API keys will fail.
@@ -63,7 +64,7 @@ environment:
 
 ---
 
-## When to Use Password Protection
+## When to Use Built-in Authentication
 
 ### Use it for:
 - Public cloud deployments (PikaPods, Railway, DigitalOcean)
@@ -89,7 +90,6 @@ services:
     pull_policy: always
     environment:
       - OPEN_NOTEBOOK_ENCRYPTION_KEY=your-secret-encryption-key
-      - OPEN_NOTEBOOK_PASSWORD=your_secure_password
     # ... rest of config
 ```
 
@@ -98,21 +98,22 @@ Or using environment file:
 ```bash
 # docker.env
 OPEN_NOTEBOOK_ENCRYPTION_KEY=your-secret-encryption-key
-OPEN_NOTEBOOK_PASSWORD=your_secure_password
 ```
 
 > **Important**: The encryption key is **required** for credential storage. Without it, you cannot save AI provider credentials via the Settings UI. If you change or lose the encryption key, all stored credentials become unreadable.
 
-### Development Setup
+### Legacy Password Mode (optional)
 
 ```bash
 # .env
 OPEN_NOTEBOOK_PASSWORD=your_secure_password
 ```
 
+If this variable is set, the middleware accepts `Authorization: Bearer <password>` and gives legacy mode priority over database JWT auth.
+
 ---
 
-## Password Requirements
+## Legacy Password Requirements
 
 ### Good Passwords
 
@@ -140,18 +141,24 @@ OPEN_NOTEBOOK_PASSWORD=admin
 
 ### Frontend Protection
 
-1. Login form appears on first visit
-2. Password stored in browser session
-3. Session persists until browser closes
-4. Clear browser data to log out
+1. Users sign in with username + password
+2. `/api/auth/login` returns a JWT token
+3. The frontend stores the token and sends `Authorization: Bearer <jwt>` to protected endpoints
+4. Additional flows may include `/register`, `/forgot-password`, and password change
+5. Legacy deployments may still use one shared password if `OPEN_NOTEBOOK_PASSWORD` is set
 
 ### API Protection
 
-All API endpoints require authentication:
+Protected API endpoints require either a JWT or, in legacy mode, the shared password:
 
 ```bash
-# Authenticated request
-curl -H "Authorization: Bearer your_password" \
+# Login first
+curl -X POST http://localhost:5055/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}'
+
+# Authenticated request with JWT
+curl -H "Authorization: Bearer <jwt-token>" \
   http://localhost:5055/api/notebooks
 
 # Unauthenticated (will fail)
@@ -174,20 +181,28 @@ These work without authentication:
 ### curl
 
 ```bash
+# Check auth mode
+curl http://localhost:5055/api/auth/status
+
+# Login
+curl -X POST http://localhost:5055/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}'
+
 # List notebooks
-curl -H "Authorization: Bearer your_password" \
+curl -H "Authorization: Bearer <jwt-token>" \
   http://localhost:5055/api/notebooks
 
 # Create notebook
 curl -X POST \
-  -H "Authorization: Bearer your_password" \
+  -H "Authorization: Bearer <jwt-token>" \
   -H "Content-Type: application/json" \
   -d '{"name": "My Notebook", "description": "Research notes"}' \
   http://localhost:5055/api/notebooks
 
 # Upload file
 curl -X POST \
-  -H "Authorization: Bearer your_password" \
+  -H "Authorization: Bearer <jwt-token>" \
   -F "file=@document.pdf" \
   http://localhost:5055/api/sources/upload
 ```
@@ -198,9 +213,9 @@ curl -X POST \
 import requests
 
 class OpenNotebookClient:
-    def __init__(self, base_url: str, password: str):
+    def __init__(self, base_url: str, token: str):
         self.base_url = base_url
-        self.headers = {"Authorization": f"Bearer {password}"}
+        self.headers = {"Authorization": f"Bearer {token}"}
 
     def get_notebooks(self):
         response = requests.get(
@@ -218,7 +233,7 @@ class OpenNotebookClient:
         return response.json()
 
 # Usage
-client = OpenNotebookClient("http://localhost:5055", "your_password")
+client = OpenNotebookClient("http://localhost:5055", "your_jwt_token")
 notebooks = client.get_notebooks()
 ```
 
@@ -226,12 +241,12 @@ notebooks = client.get_notebooks()
 
 ```javascript
 const API_URL = 'http://localhost:5055';
-const PASSWORD = 'your_password';
+const TOKEN = 'your-jwt-token';
 
 async function getNotebooks() {
   const response = await fetch(`${API_URL}/api/notebooks`, {
     headers: {
-      'Authorization': `Bearer ${PASSWORD}`
+      'Authorization': `Bearer ${TOKEN}`
     }
   });
   return response.json();
@@ -291,14 +306,14 @@ See [Reverse Proxy Configuration](reverse-proxy.md) for complete nginx/Caddy/Tra
 
 ## Security Limitations
 
-Open Notebook's password protection provides **basic access control**, not enterprise-grade security:
+Open Notebook's built-in authentication provides a practical self-hosted baseline, not enterprise-grade IAM:
 
 | Feature | Status |
 |---------|--------|
-| Password transmission | Plain text (use HTTPS!) |
-| Password storage | In memory |
-| User management | Single password for all |
-| Session timeout | None (until browser close) |
+| Password transmission | Protected by JWT bearer auth or legacy Bearer password (use HTTPS!) |
+| Password storage | Database-backed bcrypt hashes in current auth flow |
+| User management | Database users supported; advanced RBAC not built in |
+| Session timeout | JWT expiry applies |
 | Rate limiting | None |
 | Audit logging | None |
 
@@ -330,28 +345,30 @@ For deployments requiring advanced security:
 
 ## Troubleshooting
 
-### Password Not Working
+### Password / Login Issues
 
 ```bash
-# Check env var is set
+# Check env var is set if using legacy shared-password mode
 docker exec open-notebook env | grep OPEN_NOTEBOOK_PASSWORD
 
 # Check logs
 docker logs open-notebook | grep -i auth
 
-# Test API directly
-curl -H "Authorization: Bearer your_password" \
-  http://localhost:5055/health
+# Check auth mode and login flow
+curl http://localhost:5055/api/auth/status
+curl -X POST http://localhost:5055/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"admin"}'
 ```
 
 ### 401 Unauthorized Errors
 
 ```bash
 # Check header format
-curl -v -H "Authorization: Bearer your_password" \
+curl -v -H "Authorization: Bearer <jwt-token>" \
   http://localhost:5055/api/notebooks
 
-# Verify password matches
+# Verify legacy shared password if that mode is enabled
 echo "Password length: $(echo -n $OPEN_NOTEBOOK_PASSWORD | wc -c)"
 ```
 
@@ -360,20 +377,25 @@ echo "Password length: $(echo -n $OPEN_NOTEBOOK_PASSWORD | wc -c)"
 1. Clear browser cache and cookies
 2. Try incognito/private mode
 3. Check browser console for errors
-4. Verify password is correct in environment
+4. Verify whether your deployment expects JWT login or legacy `OPEN_NOTEBOOK_PASSWORD`
+5. Check `GET /api/auth/status` for the active mode
 
 ### Security Testing
 
 ```bash
-# Without password (should fail)
+# Without authentication (should fail when auth is enabled)
 curl http://localhost:5055/api/notebooks
 # Expected: {"detail": "Missing authorization header"}
 
-# With correct password (should succeed)
-curl -H "Authorization: Bearer your_password" \
+# With correct JWT (should succeed)
+curl -H "Authorization: Bearer <jwt-token>" \
   http://localhost:5055/api/notebooks
 
-# Health check (should work without password)
+# Legacy mode alternative
+curl -H "Authorization: Bearer your_shared_password" \
+  http://localhost:5055/api/notebooks
+
+# Health check (should work without authentication)
 curl http://localhost:5055/health
 ```
 

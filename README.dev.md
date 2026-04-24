@@ -6,19 +6,20 @@ This guide is for developers working on Open Notebook. For end-user documentatio
 
 ```bash
 # 1. Clone and setup
-git clone https://github.com/lfnovo/open-notebook.git
-cd open-notebook
+git clone https://github.com/YinHour/lumina.git
+cd lumina
 
-# 2. Copy environment files
+# 2. Copy environment file
 cp .env.example .env
-cp .env.example docker.env
 
 # 3. Install dependencies
 uv sync
 
-# 4. Start all services (recommended for development)
-make start-all
+# 4. Start the local dev stack (recommended)
+./dev-init.sh
 ```
+
+`./dev-init.sh` is the recommended day-to-day workflow on macOS/Linux for this repository. It prefers local non-Docker development, checks port conflicts, starts the API + worker + frontend, and auto-starts a local SurrealDB v2 binary if the database is not already reachable.
 
 ## Development Workflows
 
@@ -26,7 +27,7 @@ make start-all
 
 | Workflow | Use Case | Speed | Production Parity |
 |----------|----------|-------|-------------------|
-| **Local Services** (`make start-all`) | Day-to-day development, fastest iteration | ⚡⚡⚡ Fast | Medium |
+| **Local Services** (`./dev-init.sh`) | Day-to-day development, fastest iteration | ⚡⚡⚡ Fast | Medium |
 | **Docker Compose** (`make dev`) | Testing containerized setup | ⚡⚡ Medium | High |
 | **Local Docker Build** (`make docker-build-local`) | Testing Dockerfile changes | ⚡ Slow | Very High |
 | **Multi-platform Build** (`make docker-push`) | Publishing releases | 🐌 Very Slow | Exact |
@@ -40,19 +41,29 @@ make start-all
 ### Setup
 
 ```bash
-# Start database
-make database
+# Start everything in one command
+./dev-init.sh
+```
 
-# Start all services (DB + API + Worker + Frontend)
-make start-all
+Optional overrides:
+
+```bash
+# Use a different frontend port
+FRONTEND_PORT=3001 ./dev-init.sh
+
+# Disable auto-starting a local SurrealDB binary
+START_LOCAL_SURREAL=false ./dev-init.sh
 ```
 
 ### What This Does
 
-1. Starts SurrealDB in Docker (port 8000)
-2. Starts FastAPI backend (port 5055)
-3. Starts background worker (surreal-commands)
-4. Starts Next.js frontend (port 3000)
+1. Loads `.env` from the project root
+2. Reuses an existing SurrealDB instance or auto-starts a local SurrealDB v2 binary on port 8000
+3. Starts the FastAPI backend on port 5055 and waits for `/api/auth/status`
+4. Starts the background worker (`surreal-commands-worker`)
+5. Starts the Next.js frontend on port 3000
+
+Important local dev note: this codebase still expects SurrealDB v2 syntax for older migrations. If you run the database manually, make sure it is a SurrealDB v2 binary.
 
 ### Individual Services
 
@@ -90,6 +101,28 @@ make stop-all
 - ❌ Doesn't test Docker build
 - ❌ Environment may differ from production
 - ❌ Requires local Python/Node setup
+- ❌ Requires a local SurrealDB v2 binary if you don't want to reuse an existing DB
+
+### Authentication in local development
+
+The app now supports database-backed username/password authentication with JWT sessions.
+
+- Login page: `/login`
+- Self-registration page: `/register`
+- Forgot password page: `/forgot-password`
+- Auth status endpoint: `GET /api/auth/status`
+
+Useful local testing flags:
+
+```bash
+# Log verification codes to the API log instead of sending real email
+EMAIL_PROVIDER=debug
+
+# Allow public self-registration for /register
+ALLOW_PUBLIC_REGISTRATION=true
+```
+
+If you start the API manually, these are handy for end-to-end testing of registration and reset-password flows.
 
 ---
 
@@ -217,7 +250,7 @@ make clean-cache
 ### Adding a New Feature
 
 1. Create feature branch
-2. Develop using `make start-all`
+2. Develop using `./dev-init.sh`
 3. Write tests
 4. Run `make ruff` and `make lint`
 5. Test with `make docker-build-local`
@@ -225,7 +258,7 @@ make clean-cache
 
 ### Fixing a Bug
 
-1. Reproduce locally with `make start-all`
+1. Reproduce locally with `./dev-init.sh`
 2. Add test case demonstrating bug
 3. Fix the bug
 4. Verify test passes
@@ -304,15 +337,14 @@ Database migrations run **automatically** when the API starts.
 # Check status
 make status
 
-# Check database
-docker compose ps surrealdb
-
-# View logs
-docker compose logs surrealdb
+# Check listening ports
+lsof -i :8000
+lsof -i :5055
+lsof -i :3000
 
 # Restart everything
 make stop-all
-make start-all
+./dev-init.sh
 ```
 
 ### Port Already in Use
@@ -330,11 +362,14 @@ make stop-all
 ### Database Connection Issues
 
 ```bash
-# Verify SurrealDB is running
-docker compose ps surrealdb
-
 # Check connection settings in .env
-cat .env | grep SURREAL
+grep '^SURREAL_' .env
+
+# Verify something is listening on port 8000
+lsof -i :8000
+
+# If using a local binary, confirm it is v2
+$HOME/Library/Caches/surrealdb/surreal_v2 version
 ```
 
 ### Docker Build Fails
@@ -355,18 +390,18 @@ make docker-build-local
 ## Project Structure
 
 ```
-open-notebook/
+lumina/
 ├── api/                    # FastAPI backend
 ├── frontend/               # Next.js React frontend
 ├── open_notebook/          # Python core library
 │   ├── domain/            # Domain models
 │   ├── graphs/            # LangGraph workflows
 │   ├── ai/                # AI provider integration
-│   └── database/          # SurrealDB operations
-├── migrations/             # Database migrations
+│   └── database/          # SurrealDB operations + migrations
 ├── tests/                  # Test suite
 ├── docs/                   # User documentation
-└── Makefile               # Development commands
+├── dev-init.sh             # Preferred local non-Docker startup script
+└── Makefile                # Development commands
 ```
 
 See component-specific CLAUDE.md files for detailed architecture:
@@ -382,17 +417,16 @@ See component-specific CLAUDE.md files for detailed architecture:
 
 ```bash
 # .env file
-SURREAL_URL=ws://localhost:8000
+SURREAL_URL=ws://127.0.0.1:8000/rpc
 SURREAL_USER=root
-SURREAL_PASS=root
-SURREAL_DB=open_notebook
-SURREAL_NS=production
+SURREAL_PASSWORD=root
+SURREAL_NAMESPACE=open_notebook
+SURREAL_DATABASE=open_notebook
+OPEN_NOTEBOOK_ENCRYPTION_KEY=change-me-to-a-secret-string
 
-# AI Provider (at least one required)
-OPENAI_API_KEY=sk-...
-# OR
-ANTHROPIC_API_KEY=sk-ant-...
-# OR configure other providers (see docs/5-CONFIGURATION/)
+# Optional for local auth flow testing
+EMAIL_PROVIDER=debug
+ALLOW_PUBLIC_REGISTRATION=true
 ```
 
 See [docs/5-CONFIGURATION/](docs/5-CONFIGURATION/) for complete configuration guide.
@@ -403,8 +437,8 @@ See [docs/5-CONFIGURATION/](docs/5-CONFIGURATION/) for complete configuration gu
 
 ### Speed Up Local Development
 
-1. **Use `make start-all`** instead of Docker for daily work
-2. **Keep SurrealDB running** between sessions (`make database`)
+1. **Use `./dev-init.sh`** instead of Docker for daily work
+2. **Keep a SurrealDB v2 instance available** between sessions for faster restarts
 3. **Use `make docker-build-local`** only when testing Dockerfile changes
 4. **Skip multi-platform builds** until ready to publish
 
@@ -440,10 +474,10 @@ make clean-cache
 
 - **Documentation:** https://open-notebook.ai
 - **Discord:** https://discord.gg/37XJPXfz2w
-- **Issues:** https://github.com/lfnovo/open-notebook/issues
+- **Issues:** https://github.com/YinHour/lumina/issues
 - **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
 - **Maintainer Guide:** [MAINTAINER_GUIDE.md](MAINTAINER_GUIDE.md)
 
 ---
 
-**Last Updated:** January 2025
+**Last Updated:** April 2026
