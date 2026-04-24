@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 
 from api.models import (
@@ -17,12 +17,49 @@ from open_notebook.exceptions import InvalidInputError
 router = APIRouter()
 
 
+def _notebook_to_response(nb: dict) -> NotebookResponse:
+    return NotebookResponse(
+        id=str(nb.get("id", "")),
+        name=nb.get("name", ""),
+        description=nb.get("description", ""),
+        archived=nb.get("archived", False),
+        created=str(nb.get("created", "")),
+        updated=str(nb.get("updated", "")),
+        source_count=nb.get("source_count", 0),
+        note_count=nb.get("note_count", 0),
+        password=nb.get("password"),
+        creator_name=nb.get("creator_name"),
+        owner_id=nb.get("owner_id"),
+        visibility=nb.get("visibility", "private"),
+    )
+
+
+def _check_notebook_access(nb: dict, user_id: Optional[str], require_owner: bool = False) -> bool:
+    """Check if user has access to a notebook.
+    - Public notebooks are accessible to everyone.
+    - Private notebooks require owner_id match.
+    - If user_id is None (anonymous), only public notebooks are accessible.
+    """
+    visibility = nb.get("visibility", "private")
+    if visibility == "public":
+        return True
+    if require_owner or visibility == "private":
+        return user_id is not None and nb.get("owner_id") == user_id
+    return False
+
+
 @router.get("/notebooks", response_model=List[NotebookResponse])
 async def get_notebooks(
+    request: Request,
     archived: Optional[bool] = Query(None, description="Filter by archived status"),
     order_by: str = Query("updated desc", description="Order by field and direction"),
 ):
-    """Get all notebooks with optional filtering and ordering."""
+    """Get all notebooks with optional filtering and ordering.
+
+    Returns notebooks owned by the user (private + public) plus all public notebooks.
+    """
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
+
     try:
         # Validate order_by against allowlist to prevent SurrealQL injection
         allowed_fields = {"name", "created", "updated"}
@@ -49,36 +86,31 @@ async def get_notebooks(
                 detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
             )
 
+        # Build visibility filter
+        if user_id:
+            # Authenticated: see own notebooks (any visibility) + all public notebooks
+            visibility_filter = "(owner_id = $user_id) OR (visibility = 'public')"
+        else:
+            # Anonymous: only public notebooks
+            visibility_filter = "(visibility = 'public')"
+
         # Build the query with counts
         query = f"""
             SELECT *,
             count(<-reference.in) as source_count,
             count(<-artifact.in) as note_count
             FROM notebook
+            WHERE {visibility_filter}
             ORDER BY {validated_order_by}
         """
 
-        result = await repo_query(query)
+        result = await repo_query(query, {"user_id": user_id} if user_id else {})
 
         # Filter by archived status if specified
         if archived is not None:
             result = [nb for nb in result if nb.get("archived") == archived]
 
-        return [
-            NotebookResponse(
-                id=str(nb.get("id", "")),
-                name=nb.get("name", ""),
-                description=nb.get("description", ""),
-                archived=nb.get("archived", False),
-                created=str(nb.get("created", "")),
-                updated=str(nb.get("updated", "")),
-                source_count=nb.get("source_count", 0),
-                note_count=nb.get("note_count", 0),
-                password=nb.get("password"),
-                creator_name=nb.get("creator_name"),
-            )
-            for nb in result
-        ]
+        return [_notebook_to_response(nb) for nb in result]
     except HTTPException:
         raise
     except Exception as e:
@@ -88,15 +120,74 @@ async def get_notebooks(
         )
 
 
+@router.get("/notebooks/public", response_model=List[NotebookResponse])
+async def get_public_notebooks(
+    archived: Optional[bool] = Query(None, description="Filter by archived status"),
+    order_by: str = Query("updated desc", description="Order by field and direction"),
+):
+    """Browse public notebooks without authentication."""
+    try:
+        # Validate order_by (same as get_notebooks)
+        allowed_fields = {"name", "created", "updated"}
+        allowed_directions = {"asc", "desc"}
+
+        parts = order_by.strip().lower().split()
+        if len(parts) == 1:
+            if parts[0] not in allowed_fields:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid order_by field: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}",
+                )
+            validated_order_by = parts[0]
+        elif len(parts) == 2:
+            if parts[0] not in allowed_fields or parts[1] not in allowed_directions:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid order_by: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}. Allowed directions: asc, desc",
+                )
+            validated_order_by = f"{parts[0]} {parts[1]}"
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
+            )
+
+        query = f"""
+            SELECT *,
+            count(<-reference.in) as source_count,
+            count(<-artifact.in) as note_count
+            FROM notebook
+            WHERE visibility = 'public'
+            ORDER BY {validated_order_by}
+        """
+
+        result = await repo_query(query)
+
+        if archived is not None:
+            result = [nb for nb in result if nb.get("archived") == archived]
+
+        return [_notebook_to_response(nb) for nb in result]
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching public notebooks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching public notebooks: {str(e)}"
+        )
+
+
 @router.post("/notebooks", response_model=NotebookResponse)
-async def create_notebook(notebook: NotebookCreate):
-    """Create a new notebook."""
+async def create_notebook(request: Request, notebook: NotebookCreate):
+    """Create a new notebook. Sets owner_id from authenticated user."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         new_notebook = Notebook(
             name=notebook.name,
             description=notebook.description,
             password=notebook.password,
             creator_name=notebook.creator_name,
+            owner_id=user_id,
+            visibility=notebook.visibility,
         )
         await new_notebook.save()
 
@@ -111,6 +202,8 @@ async def create_notebook(notebook: NotebookCreate):
             note_count=0,  # New notebook has no notes
             password=new_notebook.password,
             creator_name=new_notebook.creator_name,
+            owner_id=new_notebook.owner_id,
+            visibility=new_notebook.visibility,
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -151,8 +244,9 @@ async def get_notebook_delete_preview(notebook_id: str):
 
 
 @router.get("/notebooks/{notebook_id}", response_model=NotebookResponse)
-async def get_notebook(notebook_id: str):
-    """Get a specific notebook by ID."""
+async def get_notebook(request: Request, notebook_id: str):
+    """Get a specific notebook by ID. Requires ownership (private) or public."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         # Query with counts for single notebook
         query = """
@@ -167,18 +261,11 @@ async def get_notebook(notebook_id: str):
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         nb = result[0]
-        return NotebookResponse(
-            id=str(nb.get("id", "")),
-            name=nb.get("name", ""),
-            description=nb.get("description", ""),
-            archived=nb.get("archived", False),
-            created=str(nb.get("created", "")),
-            updated=str(nb.get("updated", "")),
-            source_count=nb.get("source_count", 0),
-            note_count=nb.get("note_count", 0),
-            password=nb.get("password"),
-            creator_name=nb.get("creator_name"),
-        )
+
+        if not _check_notebook_access(nb, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        return _notebook_to_response(nb)
     except HTTPException:
         raise
     except Exception as e:
@@ -189,12 +276,17 @@ async def get_notebook(notebook_id: str):
 
 
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
-async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
-    """Update a notebook."""
+async def update_notebook(request: Request, notebook_id: str, notebook_update: NotebookUpdate):
+    """Update a notebook. Requires ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Ownership check
+        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Update only provided fields
         if notebook_update.name is not None:
@@ -207,6 +299,8 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             notebook.password = notebook_update.password
         if notebook_update.creator_name is not None:
             notebook.creator_name = notebook_update.creator_name
+        if notebook_update.visibility is not None:
+            notebook.visibility = notebook_update.visibility
 
         await notebook.save()
 
@@ -221,18 +315,7 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
 
         if result:
             nb = result[0]
-            return NotebookResponse(
-                id=str(nb.get("id", "")),
-                name=nb.get("name", ""),
-                description=nb.get("description", ""),
-                archived=nb.get("archived", False),
-                created=str(nb.get("created", "")),
-                updated=str(nb.get("updated", "")),
-                source_count=nb.get("source_count", 0),
-                note_count=nb.get("note_count", 0),
-                password=nb.get("password"),
-                creator_name=nb.get("creator_name"),
-            )
+            return _notebook_to_response(nb)
 
         # Fallback if query fails
         return NotebookResponse(
@@ -246,6 +329,8 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             note_count=0,
             password=notebook.password,
             creator_name=notebook.creator_name,
+            owner_id=notebook.owner_id,
+            visibility=notebook.visibility,
         )
     except HTTPException:
         raise
@@ -259,13 +344,18 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
 
 
 @router.post("/notebooks/{notebook_id}/sources/{source_id}")
-async def add_source_to_notebook(notebook_id: str, source_id: str):
-    """Add an existing source to a notebook (create the reference)."""
+async def add_source_to_notebook(request: Request, notebook_id: str, source_id: str):
+    """Add an existing source to a notebook (create the reference). Requires notebook ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         # Check if notebook exists
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Ownership check
+        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Check if source exists
         source = await Source.get(source_id)
@@ -304,13 +394,18 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
 
 
 @router.delete("/notebooks/{notebook_id}/sources/{source_id}")
-async def remove_source_from_notebook(notebook_id: str, source_id: str):
-    """Remove a source from a notebook (delete the reference)."""
+async def remove_source_from_notebook(request: Request, notebook_id: str, source_id: str):
+    """Remove a source from a notebook (delete the reference). Requires notebook ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         # Check if notebook exists
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Ownership check
+        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Delete the reference record linking source to notebook
         await repo_query(
@@ -335,23 +430,23 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
 
 @router.delete("/notebooks/{notebook_id}", response_model=NotebookDeleteResponse)
 async def delete_notebook(
+    request: Request,
     notebook_id: str,
     delete_exclusive_sources: bool = Query(
         False,
         description="Whether to delete sources that belong only to this notebook",
     ),
 ):
-    """
-    Delete a notebook with cascade deletion.
-
-    Always deletes all notes associated with the notebook.
-    If delete_exclusive_sources is True, also deletes sources that belong only
-    to this notebook (not linked to any other notebooks).
-    """
+    """Delete a notebook with cascade deletion. Requires ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
+
+        # Ownership check
+        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         result = await notebook.delete(delete_exclusive_sources=delete_exclusive_sources)
 

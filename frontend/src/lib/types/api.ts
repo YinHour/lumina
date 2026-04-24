@@ -9,6 +9,8 @@ export interface NotebookResponse {
   note_count: number
   password?: string | null
   creator_name?: string | null
+  owner_id?: string | null
+  visibility: 'private' | 'public'
 }
 
 export interface NoteResponse {
@@ -39,6 +41,8 @@ export interface SourceListResponse {
   command_id?: string
   status?: string
   processing_info?: Record<string, unknown>
+  owner_id?: string | null
+  visibility: 'private' | 'public'
 }
 
 export interface SourceDetailResponse extends SourceListResponse {
@@ -70,6 +74,7 @@ export interface CreateNotebookRequest {
   description?: string
   password?: string
   creator_name?: string
+  visibility?: 'private' | 'public'
 }
 
 export interface UpdateNotebookRequest {
@@ -78,6 +83,7 @@ export interface UpdateNotebookRequest {
   archived?: boolean
   password?: string
   creator_name?: string
+  visibility?: 'private' | 'public'
 }
 
 export interface NotebookDeletePreview {
@@ -131,6 +137,7 @@ export interface UpdateSourceRequest {
   type?: 'link' | 'upload' | 'text'
   url?: string
   content?: string
+  visibility?: 'private' | 'public'
 }
 
 export interface APIError {

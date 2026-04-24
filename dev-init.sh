@@ -259,4 +259,4 @@ log ""
 log "Press Ctrl+C to stop all services started by this script."
 
 cd "$ROOT_DIR/frontend"
-npm run dev -- --turbo --port "$FRONTEND_PORT"
+npm run dev -- --port "$FRONTEND_PORT"
