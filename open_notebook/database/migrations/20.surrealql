@@ -1,0 +1,27 @@
+-- Migration 20: Add owner_id and visibility to source and notebook tables
+
+-- === Source table ===
+
+-- Add owner field (references app_user)
+DEFINE FIELD IF NOT EXISTS owner_id ON TABLE source TYPE option<record<app_user>>;
+
+-- Add visibility field with default 'private'
+DEFINE FIELD IF NOT EXISTS visibility ON TABLE source TYPE string DEFAULT 'private';
+DEFINE FIELD IF NOT EXISTS visibility ON TABLE source ASSERT $value IN ['private', 'public'];
+
+-- Index for efficient owner-based queries
+DEFINE INDEX IF NOT EXISTS idx_source_owner ON TABLE source COLUMNS owner_id;
+
+-- Index for public sources browsing
+DEFINE INDEX IF NOT EXISTS idx_source_public ON TABLE source COLUMNS visibility;
+
+-- === Notebook table ===
+
+DEFINE FIELD IF NOT EXISTS owner_id ON TABLE notebook TYPE option<record<app_user>>;
+
+DEFINE FIELD IF NOT EXISTS visibility ON TABLE notebook TYPE string DEFAULT 'private';
+DEFINE FIELD IF NOT EXISTS visibility ON TABLE notebook ASSERT $value IN ['private', 'public'];
+
+DEFINE INDEX IF NOT EXISTS idx_notebook_owner ON TABLE notebook COLUMNS owner_id;
+
+DEFINE INDEX IF NOT EXISTS idx_notebook_public ON TABLE notebook COLUMNS visibility;

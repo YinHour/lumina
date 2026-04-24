@@ -1,0 +1,11 @@
+-- Rollback Migration 20
+
+REMOVE INDEX IF EXISTS idx_source_owner ON TABLE source;
+REMOVE INDEX IF EXISTS idx_source_public ON TABLE source;
+REMOVE FIELD IF EXISTS owner_id ON TABLE source;
+REMOVE FIELD IF EXISTS visibility ON TABLE source;
+
+REMOVE INDEX IF EXISTS idx_notebook_owner ON TABLE notebook;
+REMOVE INDEX IF EXISTS idx_notebook_public ON TABLE notebook;
+REMOVE FIELD IF EXISTS owner_id ON TABLE notebook;
+REMOVE FIELD IF EXISTS visibility ON TABLE notebook;
