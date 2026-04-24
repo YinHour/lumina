@@ -10,6 +10,7 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
 )
 from fastapi.responses import FileResponse, Response
@@ -36,6 +37,27 @@ from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError
 
 router = APIRouter()
+
+
+def _check_source_access(source_owner_id: Optional[str], source_visibility: str, user_id: Optional[str]) -> bool:
+    """Check if user can access a source (read-only access).
+
+    Public sources: anyone can access.
+    Private sources: only owner can access.
+    """
+    if source_visibility == "public":
+        return True
+    if user_id and source_owner_id and user_id == source_owner_id:
+        return True
+    return False
+
+
+def _check_source_ownership(source_owner_id: Optional[str], user_id: Optional[str]) -> bool:
+    """Check if user owns a source (required for write operations)."""
+    if not user_id:
+        return False
+    return user_id == source_owner_id
+
 
 
 def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
@@ -160,6 +182,7 @@ def parse_source_form_data(
 
 @router.get("/sources", response_model=List[SourceListResponse])
 async def get_sources(
+    request: Request,
     notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
     title_contains: Optional[str] = Query(None, description="Filter sources by title substring"),
     limit: int = Query(
@@ -171,7 +194,11 @@ async def get_sources(
     ),
     sort_order: str = Query("desc", description="Sort order (asc or desc)"),
 ):
-    """Get sources with pagination, sorting, and filtering support."""
+    """Get sources with pagination, sorting, and filtering support.
+
+    Returns sources owned by the user (private + public) plus all public sources.
+    """
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         # Validate sort parameters
         if sort_by not in ["created", "updated"]:
@@ -193,6 +220,13 @@ async def get_sources(
             "offset": offset,
         }
 
+        # Visibility filter: see own (any visibility) + all public
+        if user_id:
+            conditions.append("(owner_id = $user_id) OR (visibility = 'public')")
+            params["user_id"] = user_id
+        else:
+            conditions.append("visibility = 'public'")
+
         if title_contains:
             conditions.append("string::contains(string::lowercase(title), string::lowercase($title_contains))")
             params["title_contains"] = title_contains
@@ -210,7 +244,7 @@ async def get_sources(
 
         # Query sources - include command field with FETCH
         query = f"""
-            SELECT id, asset, created, title, updated, topics, command,
+            SELECT id, asset, created, title, updated, topics, command, owner_id, visibility,
             (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
             (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
             (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted
@@ -275,6 +309,9 @@ async def get_sources(
                     command_id=command_id,
                     status=status,
                     processing_info=processing_info,
+                    # Ownership fields
+                    owner_id=row.get("owner_id"),
+                    visibility=row.get("visibility", "private"),
                 )
             )
 
@@ -286,13 +323,114 @@ async def get_sources(
         raise HTTPException(status_code=500, detail=f"Error fetching sources: {str(e)}")
 
 
+@router.get("/sources/public", response_model=List[SourceListResponse])
+async def get_public_sources(
+    notebook_id: Optional[str] = Query(None, description="Filter by notebook ID"),
+    title_contains: Optional[str] = Query(None, description="Filter sources by title substring"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    sort_by: str = Query("updated"),
+    sort_order: str = Query("desc"),
+):
+    """Browse public sources without authentication."""
+    try:
+        if sort_by not in ["created", "updated"]:
+            raise HTTPException(
+                status_code=400, detail="sort_by must be 'created' or 'updated'"
+            )
+        if sort_order.lower() not in ["asc", "desc"]:
+            raise HTTPException(
+                status_code=400, detail="sort_order must be 'asc' or 'desc'"
+            )
+
+        order_clause = f"ORDER BY {sort_by} {sort_order.upper()}"
+        conditions = ["visibility = 'public'"]
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+
+        if title_contains:
+            conditions.append("string::contains(string::lowercase(title), string::lowercase($title_contains))")
+            params["title_contains"] = title_contains
+
+        if notebook_id:
+            notebook = await Notebook.get(notebook_id)
+            if not notebook:
+                raise HTTPException(status_code=404, detail="Notebook not found")
+            conditions.append("id IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)")
+            params["notebook_id"] = ensure_record_id(notebook_id)
+
+        where_clause = f"WHERE {' AND '.join(conditions)}"
+
+        query = f"""
+            SELECT id, asset, created, title, updated, topics, command, owner_id, visibility,
+            (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
+            (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+            (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted
+            FROM source
+            {where_clause}
+            {order_clause}
+            LIMIT $limit START $offset
+            FETCH command
+        """
+        result = await repo_query(query, params)
+
+        response_list = []
+        for row in result:
+            command = row.get("command")
+            command_id = status = processing_info = None
+            if command and isinstance(command, dict):
+                command_id = str(command.get("id")) if command.get("id") else None
+                status = command.get("status")
+                result_data = command.get("result")
+                execution_metadata = (result_data.get("execution_metadata", {}) if isinstance(result_data, dict) else {})
+                processing_info = {
+                    "started_at": execution_metadata.get("started_at"),
+                    "completed_at": execution_metadata.get("completed_at"),
+                    "error": command.get("error_message"),
+                }
+            elif command:
+                command_id = str(command)
+                status = "unknown"
+
+            response_list.append(
+                SourceListResponse(
+                    id=row["id"],
+                    title=row.get("title"),
+                    topics=row.get("topics") or [],
+                    asset=AssetModel(
+                        file_path=row["asset"].get("file_path") if row.get("asset") else None,
+                        url=row["asset"].get("url") if row.get("asset") else None,
+                    ) if row.get("asset") else None,
+                    embedded=row.get("embedded", False),
+                    embedded_chunks=0,
+                    kg_extracted=row.get("kg_extracted", False),
+                    insights_count=row.get("insights_count", 0),
+                    created=str(row["created"]),
+                    updated=str(row["updated"]),
+                    command_id=command_id,
+                    status=status,
+                    processing_info=processing_info,
+                    owner_id=row.get("owner_id"),
+                    visibility=row.get("visibility", "private"),
+                )
+            )
+
+        return response_list
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching public sources: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error fetching public sources: {str(e)}")
+
+
 @router.post("/sources", response_model=SourceResponse)
 async def create_source(
+    request: Request,
     form_data: tuple[SourceCreate, Optional[UploadFile]] = Depends(
         parse_source_form_data
     ),
 ):
     """Create a new source with support for both JSON and multipart form data."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     source_data, upload_file = form_data
 
     # Initialize file_path before try block so exception handlers can reference it
@@ -406,6 +544,8 @@ async def create_source(
                 title=source_data.title or "Processing...",
                 topics=[],
                 asset=source_asset,
+                owner_id=user_id,
+                visibility="private",
             )
             await source.save()
 
@@ -486,6 +626,8 @@ async def create_source(
                 source = Source(
                     title=source_data.title or "Processing...",
                     topics=[],
+                    owner_id=user_id,
+                    visibility="private",
                 )
                 await source.save()
 
@@ -564,6 +706,8 @@ async def create_source(
                     created=str(processed_source.created),
                     updated=str(processed_source.updated),
                     # No command_id or status for sync processing (legacy behavior)
+                    owner_id=processed_source.owner_id,
+                    visibility=processed_source.visibility,
                 )
 
             except Exception as e:
@@ -651,12 +795,17 @@ def _is_source_file_available(source: Source) -> Optional[bool]:
 
 
 @router.get("/sources/{source_id}", response_model=SourceResponse)
-async def get_source(source_id: str):
-    """Get a specific source by ID."""
+async def get_source(request: Request, source_id: str):
+    """Get a specific source by ID. Requires ownership (private) or public."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        # Access check
+        if not _check_source_access(source.owner_id, source.visibility, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Get status information if command exists
         status = None
@@ -704,6 +853,8 @@ async def get_source(source_id: str):
             processing_info=processing_info,
             # Notebook associations
             notebooks=notebook_ids,
+            owner_id=source.owner_id,
+            visibility=source.visibility,
         )
     except HTTPException:
         raise
@@ -713,9 +864,15 @@ async def get_source(source_id: str):
 
 
 @router.head("/sources/{source_id}/download")
-async def check_source_file(source_id: str):
-    """Check if a source has a downloadable file."""
+async def check_source_file(request: Request, source_id: str):
+    """Check if a source has a downloadable file. Requires access."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
+        source = await Source.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+        if not _check_source_access(source.owner_id, source.visibility, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
         await _resolve_source_file(source_id)
         return Response(status_code=200)
     except HTTPException:
@@ -726,9 +883,15 @@ async def check_source_file(source_id: str):
 
 
 @router.get("/sources/{source_id}/download")
-async def download_source_file(source_id: str):
-    """Download the original file associated with an uploaded source."""
+async def download_source_file(request: Request, source_id: str):
+    """Download the original file associated with an uploaded source. Requires access."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
+        source = await Source.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+        if not _check_source_access(source.owner_id, source.visibility, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
         resolved_path, filename = await _resolve_source_file(source_id)
         return FileResponse(
             path=resolved_path,
@@ -743,13 +906,18 @@ async def download_source_file(source_id: str):
 
 
 @router.get("/sources/{source_id}/status", response_model=SourceStatusResponse)
-async def get_source_status(source_id: str):
-    """Get processing status for a source."""
+async def get_source_status(request: Request, source_id: str):
+    """Get processing status for a source. Requires access."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         # First, verify source exists
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        # Access check
+        if not _check_source_access(source.owner_id, source.visibility, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Check if this is a legacy source (no command)
         if not source.command:
@@ -805,18 +973,25 @@ async def get_source_status(source_id: str):
 
 
 @router.put("/sources/{source_id}", response_model=SourceResponse)
-async def update_source(source_id: str, source_update: SourceUpdate):
-    """Update a source."""
+async def update_source(request: Request, source_id: str, source_update: SourceUpdate):
+    """Update a source. Requires ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        # Ownership check
+        if not _check_source_ownership(source.owner_id, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Update only provided fields
         if source_update.title is not None:
             source.title = source_update.title
         if source_update.topics is not None:
             source.topics = source_update.topics
+        if source_update.visibility is not None:
+            source.visibility = source_update.visibility
 
         await source.save()
 
@@ -838,6 +1013,8 @@ async def update_source(source_id: str, source_update: SourceUpdate):
             kg_extracted=kg_extracted,
             created=str(source.created),
             updated=str(source.updated),
+            owner_id=source.owner_id,
+            visibility=source.visibility,
         )
     except HTTPException:
         raise
@@ -849,13 +1026,18 @@ async def update_source(source_id: str, source_update: SourceUpdate):
 
 
 @router.post("/sources/{source_id}/retry", response_model=SourceResponse)
-async def retry_source_processing(source_id: str):
-    """Retry processing for a failed or stuck source."""
+async def retry_source_processing(request: Request, source_id: str):
+    """Retry processing for a failed or stuck source. Requires ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         # First, verify source exists
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        # Ownership check
+        if not _check_source_ownership(source.owner_id, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Check if source already has a running command
         if source.command:
@@ -956,6 +1138,8 @@ async def retry_source_processing(source_id: str):
                 command_id=command_id,
                 status="queued",
                 processing_info={"retry": True, "queued": True},
+                owner_id=source.owner_id,
+                visibility=source.visibility,
             )
 
         except Exception as e:
@@ -976,12 +1160,17 @@ async def retry_source_processing(source_id: str):
 
 
 @router.delete("/sources/{source_id}")
-async def delete_source(source_id: str):
-    """Delete a source."""
+async def delete_source(request: Request, source_id: str):
+    """Delete a source. Requires ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        # Ownership check
+        if not _check_source_ownership(source.owner_id, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         await source.delete()
 
@@ -994,12 +1183,17 @@ async def delete_source(source_id: str):
 
 
 @router.get("/sources/{source_id}/insights", response_model=List[SourceInsightResponse])
-async def get_source_insights(source_id: str):
-    """Get all insights for a specific source."""
+async def get_source_insights(request: Request, source_id: str):
+    """Get all insights for a specific source. Requires access."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        # Access check
+        if not _check_source_access(source.owner_id, source.visibility, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         insights = await source.get_insights()
         return [
@@ -1027,19 +1221,18 @@ async def get_source_insights(source_id: str):
     response_model=InsightCreationResponse,
     status_code=202,
 )
-async def create_source_insight(source_id: str, request: CreateSourceInsightRequest):
-    """
-    Start insight generation for a source by running a transformation.
-
-    This endpoint returns immediately with a 202 Accepted status.
-    The transformation runs asynchronously in the background via the job queue.
-    Poll GET /sources/{source_id}/insights to see when the insight is ready.
-    """
+async def create_source_insight(http_request: Request, source_id: str, request: CreateSourceInsightRequest):
+    """Start insight generation for a source by running a transformation. Requires ownership."""
+    user_id: Optional[str] = getattr(http_request.state, "user_id", None)
     try:
         # Validate source exists
         source = await Source.get(source_id)
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
+
+        # Ownership check
+        if not _check_source_ownership(source.owner_id, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         # Validate transformation exists
         transformation = await Transformation.get(request.transformation_id)
