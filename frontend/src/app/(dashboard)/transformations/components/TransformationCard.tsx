@@ -43,7 +43,7 @@ export function TransformationCard({ transformation, onPlayground, onEdit }: Tra
                     <ChevronRight className="h-5 w-5" />
                   )}
                   <div className="flex flex-col">
-                    <span className="font-semibold">{transformation.name}</span>
+                    <span className="font-semibold">{transformation.title || transformation.name}</span>
                     {!isExpanded && transformation.description && (
                       <span className="text-sm text-muted-foreground">{transformation.description}</span>
                     )}

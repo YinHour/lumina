@@ -39,6 +39,8 @@ export interface SourceListResponse {
   command_id?: string
   status?: string
   processing_info?: Record<string, unknown>
+  notebook_count: number
+  origin_notebook_id?: string | null
 }
 
 export interface SourceDetailResponse extends SourceListResponse {

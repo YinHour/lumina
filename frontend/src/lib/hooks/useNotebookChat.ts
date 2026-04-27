@@ -32,7 +32,23 @@ export function useNotebookChat({ notebookId, sources, notes, contextSelections 
   const [tokenCount, setTokenCount] = useState<number>(0)
   const [charCount, setCharCount] = useState<number>(0)
   // Pending model override for when user changes model before a session exists
-  const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(null)
+  const [pendingModelOverride, setPendingModelOverride] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('chat-model-override')
+        return saved ? JSON.parse(saved) : null
+      } catch (e) {
+        return null
+      }
+    }
+    return null
+  })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('chat-model-override', JSON.stringify(pendingModelOverride))
+    }
+  }, [pendingModelOverride])
 
   // Fetch sessions for this notebook
   const {

@@ -9,7 +9,7 @@ export const searchApi = {
   },
 
   // Ask with streaming (uses relative URL for Docker compatibility)
-  askKnowledgeBase: async (params: AskRequest) => {
+  askKnowledgeBase: async (params: AskRequest, signal?: AbortSignal) => {
     // Get auth token using the same logic as apiClient interceptor
     let token = null
     if (typeof window !== 'undefined') {
@@ -37,7 +37,8 @@ export const searchApi = {
         'Content-Type': 'application/json',
         ...(token && { Authorization: `Bearer ${token}` })
       },
-      body: JSON.stringify(params)
+      body: JSON.stringify(params),
+      signal
     })
 
     if (!response.ok) {

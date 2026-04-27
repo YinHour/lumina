@@ -25,7 +25,7 @@ import { AdvancedModelsDialog } from '@/components/search/AdvancedModelsDialog'
 import { SaveToNotebooksDialog } from '@/components/search/SaveToNotebooksDialog'
 
 export default function SearchPage() {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   // URL params
   const searchParams = useSearchParams()
   const urlQuery = searchParams?.get('q') || ''
@@ -33,18 +33,75 @@ export default function SearchPage() {
   const urlMode = rawMode === 'search' ? 'search' : 'ask'
 
   // Tab state (controlled)
-  const [activeTab, setActiveTab] = useState<'ask' | 'search'>(
-    urlMode === 'search' ? 'search' : 'ask'
-  )
+  const [activeTab, setActiveTab] = useState<'ask' | 'search'>(() => {
+    if (urlMode) return urlMode === 'search' ? 'search' : 'ask'
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('search-active-tab') as 'ask' | 'search') || 'ask'
+    }
+    return 'ask'
+  })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('search-active-tab', activeTab)
+    }
+  }, [activeTab])
 
   // Search state
-  const [searchQuery, setSearchQuery] = useState(urlMode === 'search' ? urlQuery : '')
-  const [searchType, setSearchType] = useState<'text' | 'vector'>('text')
-  const [searchSources, setSearchSources] = useState(true)
-  const [searchNotes, setSearchNotes] = useState(true)
+  const [searchQuery, setSearchQuery] = useState(() => {
+    if (urlMode === 'search' && urlQuery) return urlQuery
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('search-query') || ''
+    }
+    return ''
+  })
+  const [searchType, setSearchType] = useState<'text' | 'vector'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('search-type') as 'text' | 'vector') || 'text'
+    }
+    return 'text'
+  })
+  const [searchSources, setSearchSources] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('search-sources')
+      return saved ? saved === 'true' : true
+    }
+    return true
+  })
+  const [searchNotes, setSearchNotes] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('search-notes')
+      return saved ? saved === 'true' : true
+    }
+    return true
+  })
+  
+  // Persisted search results
+  const [persistedSearchResults, setPersistedSearchResults] = useState<any>(null)
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('search-query', searchQuery)
+      localStorage.setItem('search-type', searchType)
+      localStorage.setItem('search-sources', searchSources.toString())
+      localStorage.setItem('search-notes', searchNotes.toString())
+    }
+  }, [searchQuery, searchType, searchSources, searchNotes])
 
   // Ask state
-  const [askQuestion, setAskQuestion] = useState(urlMode === 'ask' ? urlQuery : '')
+  const [askQuestion, setAskQuestion] = useState(() => {
+    if (urlMode === 'ask' && urlQuery) return urlQuery
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ask-question') || ''
+    }
+    return ''
+  })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ask-question', askQuestion)
+    }
+  }, [askQuestion])
 
   // Advanced models dialog
   const [showAdvancedModels, setShowAdvancedModels] = useState(false)
@@ -52,13 +109,57 @@ export default function SearchPage() {
     strategy: string
     answer: string
     finalAnswer: string
-  } | null>(null)
+  } | null>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('ask-custom-models')
+        return saved ? JSON.parse(saved) : null
+      } catch (e) {
+        return null
+      }
+    }
+    return null
+  })
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (customModels) {
+        localStorage.setItem('ask-custom-models', JSON.stringify(customModels))
+      } else {
+        localStorage.removeItem('ask-custom-models')
+      }
+    }
+  }, [customModels])
 
   // Save to notebooks dialog
   const [showSaveDialog, setShowSaveDialog] = useState(false)
 
   // Hooks
   const searchMutation = useSearch()
+  
+  // Get active search data (either from current mutation or persisted)
+  const activeSearchData = searchMutation.data || persistedSearchResults
+  
+  // Load persisted search results on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined' && !searchMutation.data && !searchMutation.isPending) {
+      try {
+        const savedResults = localStorage.getItem('search-results')
+        if (savedResults) {
+          setPersistedSearchResults(JSON.parse(savedResults))
+        }
+      } catch (e) {
+        console.error('Failed to parse saved search results', e)
+      }
+    }
+  }, [])
+
+  // Clear persisted results when a new search starts
+  useEffect(() => {
+    if (searchMutation.isPending) {
+      setPersistedSearchResults(null)
+    }
+  }, [searchMutation.isPending])
   const ask = useAsk()
   const { data: modelDefaults, isLoading: modelsLoading } = useModelDefaults()
   const { data: availableModels } = useModels()
@@ -112,6 +213,29 @@ export default function SearchPage() {
 
     ask.sendAsk(askQuestion, models)
   }, [askQuestion, modelDefaults, customModels, ask])
+
+  const handleClearAsk = useCallback(() => {
+    setAskQuestion('')
+    ask.clearState()
+    setCustomModels(null)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('ask-question')
+      localStorage.removeItem('ask-custom-models')
+      localStorage.removeItem('ask-store-state')
+    }
+  }, [ask])
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('')
+    searchMutation.reset()
+    setPersistedSearchResults(null)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('search-results')
+      localStorage.removeItem('search-query')
+      // We don't remove search-type, search-sources, and search-notes 
+      // so the user's preferred settings are kept
+    }
+  }, [searchMutation])
 
   // Auto-trigger search/ask when arriving with URL params
   useEffect(() => {
@@ -245,11 +369,11 @@ export default function SearchPage() {
                       </div>
                     </div>
 
-                    <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                       <Button
                         onClick={handleAsk}
                         disabled={ask.isStreaming || !askQuestion.trim()}
-                        className="w-full"
+                        className="w-full sm:flex-1"
                       >
                         {ask.isStreaming ? (
                           <>
@@ -260,12 +384,23 @@ export default function SearchPage() {
                           t.searchPage.ask
                         )}
                       </Button>
+                      
+                      {(ask.finalAnswer || ask.answers.length > 0 || ask.strategy || askQuestion.length > 0) && (
+                        <Button
+                          variant="outline"
+                          onClick={handleClearAsk}
+                          disabled={ask.isStreaming}
+                          className="w-full sm:flex-1"
+                        >
+                          {language.startsWith('zh') ? '清空内容' : 'Clear'}
+                        </Button>
+                      )}
 
                       {ask.finalAnswer && (
                         <Button
                           variant="outline"
                           onClick={() => setShowSaveDialog(true)}
-                          className="w-full"
+                          className="w-full sm:flex-1"
                         >
                           <Save className="h-4 w-4 mr-2" />
                           {t.searchPage.saveToNotebooks}
@@ -322,7 +457,7 @@ export default function SearchPage() {
                   <Label htmlFor="search-query" className="sr-only">
                     {t('searchPage.search')}
                   </Label>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row flex-wrap gap-2">
                     <Input
                       id="search-query"
                       name="search-query"
@@ -348,6 +483,17 @@ export default function SearchPage() {
                       )}
                       {t('searchPage.search')}
                     </Button>
+                    
+                    {(activeSearchData || searchMutation.isError || searchQuery.length > 0) && (
+                      <Button
+                        variant="outline"
+                        onClick={handleClearSearch}
+                        disabled={searchMutation.isPending}
+                        className="w-full sm:w-auto"
+                      >
+                        {language.startsWith('zh') ? '清空内容' : 'Clear'}
+                      </Button>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">{t.searchPage.pressToSearch}</p>
                 </div>
@@ -424,16 +570,16 @@ export default function SearchPage() {
                 </div>
 
                 {/* Search Results */}
-                {searchMutation.data && (
+                {activeSearchData && (
                   <div className="mt-6 space-y-3">
                     <div className="flex items-center justify-between">
                       <h3 className="text-sm font-medium">
-                        {t.searchPage.resultsFound.replace('{count}', searchMutation.data.total_count.toString())}
+                        {t.searchPage.resultsFound.replace('{count}', activeSearchData.total_count.toString())}
                       </h3>
-                      <Badge variant="outline">{searchMutation.data.search_type === 'text' ? t.searchPage.textSearch : t.searchPage.vectorSearch}</Badge>
+                      <Badge variant="outline">{activeSearchData.search_type === 'text' ? t.searchPage.textSearch : t.searchPage.vectorSearch}</Badge>
                     </div>
 
-                    {searchMutation.data.results.length === 0 ? (
+                    {activeSearchData.results.length === 0 ? (
                       <Card>
                         <CardContent className="pt-6 text-center text-muted-foreground">
                           {t.searchPage.noResultsFor.replace('{query}', searchQuery)}
@@ -441,7 +587,7 @@ export default function SearchPage() {
                       </Card>
                     ) : (
                       <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2">
-                        {searchMutation.data.results.map((result, index) => {
+                        {activeSearchData.results.map((result: any, index: number) => {
                           // Parse type from parent_id (format: "source:id" or "note:id" or "source_insight:id")
                           // Handle null parent_id gracefully (orphaned records)
                           if (!result.parent_id) {

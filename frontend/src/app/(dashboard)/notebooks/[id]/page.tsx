@@ -55,10 +55,29 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
   const [mobileActiveTab, setMobileActiveTab] = useState<'sources' | 'notes' | 'chat'>('chat')
 
   // Context selection state
-  const [contextSelections, setContextSelections] = useState<ContextSelections>({
-    sources: {},
-    notes: {}
+  const [contextSelections, setContextSelections] = useState<ContextSelections>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`notebook-context-${notebookId}`)
+      if (saved) {
+        try {
+          return JSON.parse(saved)
+        } catch (e) {
+          console.error('Failed to parse saved context selections', e)
+        }
+      }
+    }
+    return {
+      sources: {},
+      notes: {}
+    }
   })
+
+  // Save to localStorage whenever it changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`notebook-context-${notebookId}`, JSON.stringify(contextSelections))
+    }
+  }, [contextSelections, notebookId])
 
   // Password state
   const [isUnlocked, setIsUnlocked] = useState(false)
@@ -93,6 +112,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     if (sources && sources.length > 0) {
       setContextSelections(prev => {
         const newSourceSelections = { ...prev.sources }
+        let changed = false
         sources.forEach(source => {
           const currentMode = newSourceSelections[source.id]
           const hasInsights = source.insights_count > 0
@@ -100,12 +120,10 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
           if (currentMode === undefined) {
             // Initial setup - default based on insights availability
             newSourceSelections[source.id] = hasInsights ? 'insights' : 'full'
-          } else if (currentMode === 'full' && hasInsights) {
-            // Source gained insights while in 'full' mode - auto-switch to 'insights'
-            newSourceSelections[source.id] = 'insights'
+            changed = true
           }
         })
-        return { ...prev, sources: newSourceSelections }
+        return changed ? { ...prev, sources: newSourceSelections } : prev
       })
     }
   }, [sources])
@@ -114,14 +132,16 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
     if (notes && notes.length > 0) {
       setContextSelections(prev => {
         const newNoteSelections = { ...prev.notes }
+        let changed = false
         notes.forEach(note => {
           // Only set default if not already set
           if (!(note.id in newNoteSelections)) {
             // Notes default to 'full'
             newNoteSelections[note.id] = 'full'
+            changed = true
           }
         })
-        return { ...prev, notes: newNoteSelections }
+        return changed ? { ...prev, notes: newNoteSelections } : prev
       })
     }
   }, [notes])
@@ -135,6 +155,30 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
         [itemId]: mode
       }
     }))
+  }
+
+  const handleBulkContextModeChange = (mode: ContextMode, type: 'source' | 'note') => {
+    setContextSelections(prev => {
+      const items = type === 'source' ? sources : notes
+      if (!items) return prev
+      
+      const newSelections = { ...(type === 'source' ? prev.sources : prev.notes) }
+      let changed = false
+      
+      items.forEach(item => {
+        if (newSelections[item.id] !== mode) {
+          newSelections[item.id] = mode
+          changed = true
+        }
+      })
+      
+      if (!changed) return prev
+      
+      return {
+        ...prev,
+        [type === 'source' ? 'sources' : 'notes']: newSelections
+      }
+    })
   }
 
   if (notebookLoading) {
@@ -234,6 +278,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                     onRefresh={refetchSources}
                     contextSelections={contextSelections.sources}
                     onContextModeChange={(sourceId, mode) => handleContextModeChange(sourceId, mode, 'source')}
+                    onBulkContextModeChange={(mode) => handleBulkContextModeChange(mode, 'source')}
                     hasNextPage={hasNextPage}
                     isFetchingNextPage={isFetchingNextPage}
                     fetchNextPage={fetchNextPage}
@@ -246,6 +291,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                     notebookId={notebookId}
                     contextSelections={contextSelections.notes}
                     onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
+                    onBulkContextModeChange={(mode) => handleBulkContextModeChange(mode, 'note')}
                   />
                 )}
                 {mobileActiveTab === 'chat' && (
@@ -278,6 +324,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 onRefresh={refetchSources}
                 contextSelections={contextSelections.sources}
                 onContextModeChange={(sourceId, mode) => handleContextModeChange(sourceId, mode, 'source')}
+                onBulkContextModeChange={(mode) => handleBulkContextModeChange(mode, 'source')}
                 hasNextPage={hasNextPage}
                 isFetchingNextPage={isFetchingNextPage}
                 fetchNextPage={fetchNextPage}
@@ -295,6 +342,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 notebookId={notebookId}
                 contextSelections={contextSelections.notes}
                 onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
+                onBulkContextModeChange={(mode) => handleBulkContextModeChange(mode, 'note')}
               />
             </div>
 

@@ -8,6 +8,8 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
@@ -103,14 +105,30 @@ export default function SourcesPage() {
 
   useEffect(() => {
     // Focus the table when component mounts or sources change
-    if (sources.length > 0 && tableRef.current) {
-      tableRef.current.focus()
+    if (sources.length > 0 && tableRef.current && !deleteDialog.open) {
+      // Only focus if no other specific element is focused (like an input)
+      if (document.activeElement === document.body || document.activeElement === tableRef.current) {
+        tableRef.current.focus()
+      }
     }
-  }, [sources])
+  }, [sources, deleteDialog.open])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (sources.length === 0) return
+      
+      // Do not handle keyboard navigation if a dialog is open
+      // Use document.querySelector to check for any open dialogs globally
+      if (deleteDialog.open || document.querySelector('[role="dialog"]')) return
+
+      // Do not handle keyboard navigation if an input element is focused
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return
+
+      // Do not handle keyboard navigation if any modifier keys are pressed
+      if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey) return
+
+      // Only handle specific keys
+      if (!['ArrowDown', 'ArrowUp', 'Enter', 'Home', 'End'].includes(e.key)) return
 
       switch (e.key) {
         case 'ArrowDown':
@@ -153,7 +171,7 @@ export default function SourcesPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [sources, selectedIndex, router])
+  }, [sources, selectedIndex, router, deleteDialog.open])
 
   const scrollToSelectedRow = (index: number) => {
     const scrollContainer = scrollContainerRef.current
@@ -213,13 +231,25 @@ export default function SourcesPage() {
     router.push(`/sources/${sourceId}`)
   }, [router])
 
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deletePasswordError, setDeletePasswordError] = useState('')
+
   const handleDeleteClick = useCallback((e: React.MouseEvent, source: SourceListResponse) => {
+    e.preventDefault()
     e.stopPropagation() // Prevent row click
+    setDeletePassword('')
+    setDeletePasswordError('')
     setDeleteDialog({ open: true, source })
   }, [])
 
   const handleDeleteConfirm = async () => {
     if (!deleteDialog.source) return
+
+    const masterPassword = process.env.NEXT_PUBLIC_MASTER_NOTEBOOK_PASSWORD
+    if (masterPassword && deletePassword !== masterPassword) {
+      setDeletePasswordError(language.startsWith('zh') ? '密码错误' : 'Incorrect password')
+      return
+    }
 
     try {
       await sourcesApi.delete(deleteDialog.source.id)
@@ -288,6 +318,9 @@ export default function SourcesPage() {
               <col className="w-[140px]" />
               <col className="w-[100px]" />
               <col className="w-[100px]" />
+              <col className="w-[100px]" />
+              <col className="w-[100px]" />
+              <col className="w-[100px]" />
             </colgroup>
             <thead className="sticky top-0 bg-background z-10">
               <tr className="border-b bg-muted/50">
@@ -324,6 +357,12 @@ export default function SourcesPage() {
                 </th>
                   <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
                     {t.sources.kgExtracted || "已抽取图谱"}
+                  </th>
+                  <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
+                    {language.startsWith('zh') ? "引用次数" : "References"}
+                  </th>
+                  <th className="h-12 px-4 text-right align-middle font-medium text-muted-foreground">
+                    {t.common.actions}
                   </th>
                 </tr>
               </thead>
@@ -379,6 +418,19 @@ export default function SourcesPage() {
                       {source.kg_extracted ? tYes : tNo}
                     </Badge>
                   </td>
+                  <td className="h-12 px-4 text-center hidden lg:table-cell">
+                    <span className="text-sm font-medium">{source.notebook_count || 0}</span>
+                  </td>
+                  <td className="h-12 px-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={(e) => handleDeleteClick(e, source)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -407,15 +459,59 @@ export default function SourcesPage() {
         </div>
       </div>
 
-      <ConfirmDialog
-        open={deleteDialog.open}
-        onOpenChange={(open) => setDeleteDialog({ open, source: deleteDialog.source })}
-        title={t.sources?.delete ?? 'Delete'}
-        description={(t.sources?.deleteConfirmWithTitle ?? 'Are you sure you want to delete {title}?').replace('{title}', deleteDialog.source?.title || tUntitledSource)}
-        confirmText={t.common?.delete ?? 'Delete'}
-        confirmVariant="destructive"
-        onConfirm={handleDeleteConfirm}
-      />
+      <Dialog open={deleteDialog.open} onOpenChange={(open) => {
+        if (!open) {
+          setDeletePassword('')
+          setDeletePasswordError('')
+        }
+        setDeleteDialog({ open, source: open ? deleteDialog.source : null })
+      }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>{t.sources?.delete ?? 'Delete'}</DialogTitle>
+            <DialogDescription>
+              {(t.sources?.deleteConfirmWithTitle ?? 'Are you sure you want to delete {title}?').replace('{title}', deleteDialog.source?.title || tUntitledSource)}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {process.env.NEXT_PUBLIC_MASTER_NOTEBOOK_PASSWORD && (
+            <div className="space-y-2 py-4">
+              <p className="text-sm font-medium">
+                {language.startsWith('zh') ? '需要管理员密码' : 'Admin Password Required'}
+              </p>
+              <Input
+                type="password"
+                value={deletePassword}
+                onChange={e => {
+                  setDeletePassword(e.target.value)
+                  setDeletePasswordError('')
+                }}
+                onKeyDown={e => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleDeleteConfirm()
+                  }
+                }}
+                placeholder={language.startsWith('zh') ? '请输入密码' : 'Enter password'}
+                autoFocus
+              />
+              {deletePasswordError && (
+                <p className="text-sm text-destructive">{deletePasswordError}</p>
+              )}
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialog({ open: false, source: null })}>
+              {t.common?.cancel ?? 'Cancel'}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm}>
+              {t.common?.delete ?? 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   )
 }

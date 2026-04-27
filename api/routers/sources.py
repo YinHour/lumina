@@ -210,10 +210,11 @@ async def get_sources(
 
         # Query sources - include command field with FETCH
         query = f"""
-            SELECT id, asset, created, title, updated, topics, command,
+            SELECT id, asset, created, title, updated, topics, command, origin_notebook_id,
             (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
             (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
-            (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted
+            (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted,
+            (SELECT VALUE count() FROM reference WHERE in = $parent.id GROUP ALL)[0].count OR 0 AS notebook_count
             FROM source
             {where_clause}
             {order_clause}
@@ -275,6 +276,8 @@ async def get_sources(
                     command_id=command_id,
                     status=status,
                     processing_info=processing_info,
+                    notebook_count=row.get("notebook_count", 0),
+                    origin_notebook_id=row.get("origin_notebook_id"),
                 )
             )
 
@@ -402,10 +405,15 @@ async def create_source(
             else:
                 source_asset = None
 
+            origin_notebook_id = None
+            if source_data.notebooks and len(source_data.notebooks) > 0:
+                origin_notebook_id = source_data.notebooks[0]
+
             source = Source(
                 title=source_data.title or "Processing...",
                 topics=[],
                 asset=source_asset,
+                origin_notebook_id=origin_notebook_id,
             )
             await source.save()
 
@@ -483,9 +491,14 @@ async def create_source(
                 import commands.source_commands  # noqa: F401
 
                 # Create source record - let SurrealDB generate the ID
+                origin_notebook_id = None
+                if source_data.notebooks and len(source_data.notebooks) > 0:
+                    origin_notebook_id = source_data.notebooks[0]
+
                 source = Source(
                     title=source_data.title or "Processing...",
                     topics=[],
+                    origin_notebook_id=origin_notebook_id,
                 )
                 await source.save()
 
@@ -704,6 +717,8 @@ async def get_source(source_id: str):
             processing_info=processing_info,
             # Notebook associations
             notebooks=notebook_ids,
+            notebook_count=len(notebook_ids),
+            origin_notebook_id=source.origin_notebook_id,
         )
     except HTTPException:
         raise

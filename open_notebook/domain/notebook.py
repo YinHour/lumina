@@ -295,6 +295,7 @@ class Source(ObjectModel):
     title: Optional[str] = None
     topics: Optional[List[str]] = Field(default_factory=list)
     full_text: Optional[str] = None
+    origin_notebook_id: Optional[str] = None
     command: Optional[Union[str, RecordID]] = Field(
         default=None, description="Link to surreal-commands processing job"
     )

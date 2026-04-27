@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useCallback } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { searchApi } from '@/lib/api/search'
 import { AskStreamEvent } from '@/lib/types/search'
+import { useAskStore } from '@/lib/stores/ask-store'
 
 interface AskModels {
   strategy: string
@@ -13,28 +14,9 @@ interface AskModels {
   finalAnswer: string
 }
 
-interface StrategyData {
-  reasoning: string
-  searches: Array<{ term: string; instructions: string }>
-}
-
-interface AskState {
-  isStreaming: boolean
-  strategy: StrategyData | null
-  answers: string[]
-  finalAnswer: string | null
-  error: string | null
-}
-
 export function useAsk() {
   const { t } = useTranslation()
-  const [state, setState] = useState<AskState>({
-    isStreaming: false,
-    strategy: null,
-    answers: [],
-    finalAnswer: null,
-    error: null
-  })
+  const store = useAskStore()
 
   const sendAsk = useCallback(async (question: string, models: AskModels) => {
     // Validate inputs
@@ -48,14 +30,12 @@ export function useAsk() {
       return
     }
 
-    // Reset state
-    setState({
-      isStreaming: true,
-      strategy: null,
-      answers: [],
-      finalAnswer: null,
-      error: null
-    })
+    // Reset state and cancel any ongoing request
+    useAskStore.getState().clearState()
+    
+    const abortController = new AbortController()
+    useAskStore.getState().setAbortController(abortController)
+    useAskStore.getState().setStreaming(true)
 
     try {
       const response = await searchApi.askKnowledgeBase({
@@ -63,7 +43,7 @@ export function useAsk() {
         strategy_model: models.strategy,
         answer_model: models.answer,
         final_answer_model: models.finalAnswer
-      })
+      }, abortController.signal)
 
       if (!response) {
         throw new Error('No response body received from server')
@@ -95,37 +75,18 @@ export function useAsk() {
               const data: AskStreamEvent = JSON.parse(jsonStr)
 
               if (data.type === 'strategy') {
-                setState(prev => ({
-                  ...prev,
-                  strategy: {
-                    reasoning: data.reasoning || prev.strategy?.reasoning || '',
-                    searches: data.searches || []
-                  }
-                }))
+                useAskStore.getState().setStrategy({
+                  reasoning: data.reasoning || useAskStore.getState().strategy?.reasoning || '',
+                  searches: data.searches || []
+                })
               } else if (data.type === 'strategy_reasoning_chunk') {
-                setState(prev => ({
-                  ...prev,
-                  strategy: {
-                    reasoning: (prev.strategy?.reasoning || '') + (data.chunk || ''),
-                    searches: prev.strategy?.searches || []
-                  }
-                }))
+                useAskStore.getState().updateStrategyReasoning(data.chunk || '')
               } else if (data.type === 'answer') {
-                setState(prev => ({
-                  ...prev,
-                  answers: [...prev.answers, data.content || '']
-                }))
+                useAskStore.getState().addAnswer(data.content || '')
               } else if (data.type === 'final_answer') {
-                setState(prev => ({
-                  ...prev,
-                  finalAnswer: data.content || '',
-                  isStreaming: false
-                }))
+                useAskStore.getState().setFinalAnswer(data.content || '')
               } else if (data.type === 'complete') {
-                setState(prev => ({
-                  ...prev,
-                  isStreaming: false
-                }))
+                useAskStore.getState().setStreaming(false)
               } else if (data.type === 'error') {
                 throw new Error(data.message || 'Stream error occurred')
               }
@@ -142,38 +103,39 @@ export function useAsk() {
       }
 
       // Ensure streaming is stopped
-      setState(prev => ({ ...prev, isStreaming: false }))
+      useAskStore.getState().setStreaming(false)
 
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        console.log('Ask request aborted')
+        return
+      }
+
       const err = error as { message?: string }
       const errorMessage = err.message || 'An unexpected error occurred'
       console.error('Ask error:', error)
 
-      setState(prev => ({
-        ...prev,
-        isStreaming: false,
-        error: errorMessage
-      }))
+      useAskStore.getState().setError(errorMessage)
 
       toast.error(t('apiErrors.askFailed'), {
         description: getApiErrorMessage(errorMessage, (key) => t(key))
       })
+    } finally {
+      // Clean up abort controller if it's the current one
+      if (useAskStore.getState().abortController === abortController) {
+        useAskStore.getState().setAbortController(null)
+      }
     }
   }, [t])
 
-  const reset = useCallback(() => {
-    setState({
-      isStreaming: false,
-      strategy: null,
-      answers: [],
-      finalAnswer: null,
-      error: null
-    })
-  }, [])
-
   return {
-    ...state,
+    isStreaming: store.isStreaming,
+    strategy: store.strategy,
+    answers: store.answers,
+    finalAnswer: store.finalAnswer,
+    error: store.error,
     sendAsk,
-    reset
+    reset: store.clearState,
+    clearState: store.clearState
   }
 }

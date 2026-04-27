@@ -233,7 +233,7 @@ async def transform_content(state: TransformationState) -> Optional[dict]:
         return None
     transformation: Transformation = state["transformation"]
 
-    logger.info(f"Submitting background job for transformation {transformation.name}")
+    logger.info(f"Submitting background job for transformation {transformation.title or transformation.name}")
     from surreal_commands import submit_command
     submit_command(
         "open_notebook",
@@ -248,7 +248,7 @@ async def transform_content(state: TransformationState) -> Optional[dict]:
         "transformation": [
             {
                 "output": "Transformation job submitted to background worker",
-                "transformation_name": transformation.name,
+                "transformation_name": transformation.title or transformation.name,
             }
         ]
     }

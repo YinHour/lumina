@@ -36,8 +36,8 @@ async def call_model_with_messages(state: ThreadState, config: RunnableConfig) -
             "model_override"
         )
 
+        # Get the model provisioned
         try:
-            # Get the model provisioned
             model = await provision_langchain_model(
                 str(payload),
                 model_id,

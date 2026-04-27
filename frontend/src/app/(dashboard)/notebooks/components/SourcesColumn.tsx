@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, FileText, Link2, ChevronDown, Loader2 } from 'lucide-react'
+import { Plus, FileText, Link2, ChevronDown, Loader2, MoreVertical, CheckSquare, List, Ban } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AddSourceDialog } from '@/components/sources/AddSourceDialog'
@@ -18,6 +18,8 @@ import { AddExistingSourceDialog } from '@/components/sources/AddExistingSourceD
 import { SourceCard } from '@/components/sources/SourceCard'
 import { useDeleteSource, useRetrySource, useRemoveSourceFromNotebook } from '@/lib/hooks/use-sources'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
 import { ContextMode } from '../[id]/page'
 import { CollapsibleColumn, createCollapseButton } from '@/components/notebooks/CollapsibleColumn'
@@ -32,6 +34,7 @@ interface SourcesColumnProps {
   onRefresh?: () => void
   contextSelections?: Record<string, ContextMode>
   onContextModeChange?: (sourceId: string, mode: ContextMode) => void
+  onBulkContextModeChange?: (mode: ContextMode) => void
   // Pagination props
   hasNextPage?: boolean
   isFetchingNextPage?: boolean
@@ -45,11 +48,12 @@ export function SourcesColumn({
   onRefresh,
   contextSelections,
   onContextModeChange,
+  onBulkContextModeChange,
   hasNextPage,
   isFetchingNextPage,
   fetchNextPage,
 }: SourcesColumnProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addExistingDialogOpen, setAddExistingDialogOpen] = useState(false)
@@ -94,13 +98,25 @@ export function SourcesColumn({
     return () => container.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
   
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deletePasswordError, setDeletePasswordError] = useState('')
+
   const handleDeleteClick = (sourceId: string) => {
     setSourceToDelete(sourceId)
+    setDeletePassword('')
+    setDeletePasswordError('')
     setDeleteDialogOpen(true)
   }
 
   const handleDeleteConfirm = async () => {
     if (!sourceToDelete) return
+
+    const masterPassword = process.env.NEXT_PUBLIC_MASTER_NOTEBOOK_PASSWORD
+    if (masterPassword && deletePassword !== masterPassword) {
+      // Use window.localStorage or similar if language isn't available directly
+      setDeletePasswordError('密码错误 / Incorrect password')
+      return
+    }
 
     try {
       await deleteSource.mutateAsync(sourceToDelete)
@@ -177,6 +193,31 @@ export function SourcesColumn({
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
+                
+                {onBulkContextModeChange && sources && sources.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('full')}>
+                        <List className="h-4 w-4 mr-2" />
+                        {language.startsWith('zh') ? '全部设为参考全文' : 'Set All to Full Text'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('insights')}>
+                        <CheckSquare className="h-4 w-4 mr-2" />
+                        {language.startsWith('zh') ? '全部设为参考见解' : 'Set All to Insights'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('off')}>
+                        <Ban className="h-4 w-4 mr-2" />
+                        {language.startsWith('zh') ? '全部设为不参考' : 'Set All to Off'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                
                 {collapseButton}
               </div>
             </div>
@@ -205,6 +246,7 @@ export function SourcesColumn({
                     onRemoveFromNotebook={handleRemoveFromNotebook}
                     onRefresh={onRefresh}
                     showRemoveFromNotebook={true}
+                    currentNotebookId={notebookId}
                     contextMode={contextSelections?.[source.id]}
                     onContextModeChange={onContextModeChange
                       ? (mode) => onContextModeChange(source.id, mode)
@@ -237,16 +279,63 @@ export function SourcesColumn({
         onSuccess={onRefresh}
       />
 
-      <ConfirmDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        title={t.sources.delete}
-        description={t.sources.deleteConfirm}
-        confirmText={t.common.delete}
-        onConfirm={handleDeleteConfirm}
-        isLoading={deleteSource.isPending}
-        confirmVariant="destructive"
-      />
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setDeletePassword('')
+          setDeletePasswordError('')
+          setSourceToDelete(null)
+        }
+        setDeleteDialogOpen(open)
+      }}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>{t.sources.delete}</DialogTitle>
+            <DialogDescription>
+              {t.sources.deleteConfirm}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {process.env.NEXT_PUBLIC_MASTER_NOTEBOOK_PASSWORD && (
+            <div className="space-y-2 py-4">
+              <p className="text-sm font-medium">
+                Admin Password Required
+              </p>
+              <Input
+                type="password"
+                value={deletePassword}
+                onChange={e => {
+                  setDeletePassword(e.target.value)
+                  setDeletePasswordError('')
+                }}
+                onKeyDown={e => {
+                  e.stopPropagation()
+                  // Also stop native event propagation to be safe
+                  e.nativeEvent.stopImmediatePropagation()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleDeleteConfirm()
+                  }
+                }}
+                placeholder="Enter password"
+                autoFocus
+              />
+              {deletePasswordError && (
+                <p className="text-sm text-destructive">{deletePasswordError}</p>
+              )}
+            </div>
+          )}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              {t.common.cancel}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleteSource.isPending}>
+              {deleteSource.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {t.common.delete}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={removeDialogOpen}

@@ -50,6 +50,7 @@ async def call_model_with_source_context(
     except Exception as e:
         error_class, user_message = classify_error(e)
         import traceback
+        from loguru import logger
         logger.error(f"Error in source chat streaming: {str(e)}\n{traceback.format_exc()}")
         raise error_class(user_message) from e
 

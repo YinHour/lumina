@@ -41,6 +41,7 @@ interface SourceCardProps {
   onRefresh?: () => void
   className?: string
   showRemoveFromNotebook?: boolean
+  currentNotebookId?: string
   contextMode?: ContextMode
   onContextModeChange?: (mode: ContextMode) => void
 }
@@ -116,6 +117,7 @@ export function SourceCard({
   onRefresh,
   className,
   showRemoveFromNotebook = false,
+  currentNotebookId,
   contextMode,
   onContextModeChange
 }: SourceCardProps) {
@@ -340,17 +342,19 @@ export function SourceCard({
                 </>
               )}
 
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleDelete()
-                }}
-                disabled={!onDelete}
-                className="text-red-600 focus:text-red-600"
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {t.sources.deleteSource}
-              </DropdownMenuItem>
+              {(!showRemoveFromNotebook || (currentNotebookId && source.origin_notebook_id === currentNotebookId)) && (
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleDelete()
+                  }}
+                  disabled={!onDelete}
+                  className="text-red-600 focus:text-red-600"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  {t.sources.deleteSource}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
           </div>

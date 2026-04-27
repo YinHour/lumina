@@ -83,7 +83,24 @@ export function ChatPanel({
   const { t } = useTranslation()
   const chatInputId = useId()
   const [input, setInput] = useState('')
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false)
+  const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('chat-web-search-enabled')
+        return saved ? JSON.parse(saved) : false
+      } catch (e) {
+        return false
+      }
+    }
+    return false
+  })
+  
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('chat-web-search-enabled', JSON.stringify(webSearchEnabled))
+    }
+  }, [webSearchEnabled])
+  
   const [sessionManagerOpen, setSessionManagerOpen] = useState(false)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -102,13 +119,87 @@ export function ChatPanel({
     }
   }
 
-  // Auto-scroll to bottom when new messages arrive
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  const [isAutoScrollEnabled, setIsAutoScrollEnabled] = useState(true)
+  const lastMessageCount = useRef(messages.length)
+  const isUserScrolling = useRef(false)
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Auto-scroll to bottom when new messages arrive, but only if user hasn't scrolled up
+  useEffect(() => {
+    // If a new message was added (either by user or AI starting to respond), 
+    // force auto-scroll back on, UNLESS the user is actively scrolling up
+    if (messages.length > lastMessageCount.current && !isUserScrolling.current) {
+      setIsAutoScrollEnabled(true)
+    }
+    lastMessageCount.current = messages.length
+
+    if (isAutoScrollEnabled) {
+      // Clear any existing timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current)
+      }
+      
+      // Use requestAnimationFrame for smoother scrolling during React renders
+      scrollTimeoutRef.current = setTimeout(() => {
+        requestAnimationFrame(() => {
+          if (scrollAreaRef.current) {
+            const viewport = scrollAreaRef.current.querySelector('[data-slot="scroll-area-viewport"]')
+            if (viewport) {
+              viewport.scrollTop = viewport.scrollHeight
+            } else {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+            }
+          } else {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+          }
+        })
+      }, 10)
+      
+      return () => {
+        if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+      }
+    }
+  }, [messages, isAutoScrollEnabled]) // Removed isStreaming from dependencies to avoid jitter
+
+  // Detect when user scrolls up to disable auto-scroll
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLDivElement
+    // Check if we are near the bottom (within 150px to be safe, increased threshold for smoother detection)
+    const isNearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 150
+    
+    // Only update if the user has intentionally scrolled away from the bottom
+    // We don't want to disable auto-scroll just because a new message pushed the content down
+    if (!isNearBottom && isAutoScrollEnabled) {
+      isUserScrolling.current = true
+      setIsAutoScrollEnabled(false)
+    } else if (isNearBottom && !isAutoScrollEnabled) {
+      // User scrolled back to bottom manually
+      isUserScrolling.current = false
+      setIsAutoScrollEnabled(true)
+    }
+  }
+
+  // Re-enable auto-scroll when user sends a new message
   const handleSend = () => {
     if (input.trim() && !isStreaming) {
+      setIsAutoScrollEnabled(true)
+      isUserScrolling.current = false
+      // Force scroll immediately on send
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current)
+      scrollTimeoutRef.current = setTimeout(() => {
+        requestAnimationFrame(() => {
+          if (scrollAreaRef.current) {
+            const viewport = scrollAreaRef.current.querySelector('[data-slot="scroll-area-viewport"]')
+            if (viewport) {
+              viewport.scrollTop = viewport.scrollHeight
+            } else {
+              messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+            }
+          } else {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+          }
+        })
+      }, 10)
       onSendMessage(input.trim(), modelOverride, webSearchEnabled)
       setInput('')
     }
@@ -170,7 +261,11 @@ export function ChatPanel({
         </div>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col min-h-0 p-0">
-        <ScrollArea className="flex-1 min-h-0 px-4" ref={scrollAreaRef}>
+        <ScrollArea 
+          className="flex-1 min-h-0 px-4" 
+          ref={scrollAreaRef}
+          onScrollCapture={handleScroll}
+        >
           <div className="space-y-4 py-4">
             {messages.length === 0 ? (
               <div className="text-center text-muted-foreground py-8">

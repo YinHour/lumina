@@ -40,7 +40,7 @@ export function ProcessingStep({
   const { t } = useTranslation()
   const transformationItems = transformations.map((transformation) => ({
     id: transformation.id,
-    title: transformation.title,
+    title: transformation.title || transformation.name,
     description: transformation.description
   }))
 

@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getApiErrorKey } from '@/lib/utils/error-handler'
 import { searchApi } from '@/lib/api/search'
-import { SearchRequest } from '@/lib/types/search'
+import { SearchRequest, SearchResponse } from '@/lib/types/search'
 
 export function useSearch() {
   const { t } = useTranslation()
@@ -20,10 +20,17 @@ export function useSearch() {
       // Sort by final_score descending
       processedResults.sort((a, b) => b.final_score - a.final_score)
 
-      return {
+      const finalResponse = {
         ...response,
         results: processedResults
       }
+      
+      // Save to local storage for persistence
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('search-results', JSON.stringify(finalResponse))
+      }
+      
+      return finalResponse
     },
     onError: (error: Error) => {
       toast.error(t('apiErrors.searchFailed'), {

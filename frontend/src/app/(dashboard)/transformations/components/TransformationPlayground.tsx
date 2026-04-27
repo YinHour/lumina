@@ -66,7 +66,7 @@ export function TransformationPlayground({ transformations, selectedTransformati
                 <SelectContent>
                   {transformations?.map((transformation) => (
                     <SelectItem key={transformation.id} value={transformation.id}>
-                      {transformation.name}
+                      {transformation.title || transformation.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

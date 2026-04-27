@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Plus, StickyNote, Bot, User, MoreVertical, Trash2 } from 'lucide-react'
+import { Plus, StickyNote, Bot, User, MoreVertical, Trash2, List, Ban } from 'lucide-react'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +31,7 @@ interface NotesColumnProps {
   notebookId: string
   contextSelections?: Record<string, ContextMode>
   onContextModeChange?: (noteId: string, mode: ContextMode) => void
+  onBulkContextModeChange?: (mode: ContextMode) => void
 }
 
 export function NotesColumn({
@@ -38,7 +39,8 @@ export function NotesColumn({
   isLoading,
   notebookId,
   contextSelections,
-  onContextModeChange
+  onContextModeChange,
+  onBulkContextModeChange
 }: NotesColumnProps) {
   const { t, language } = useTranslation()
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -95,6 +97,27 @@ export function NotesColumn({
                   <Plus className="h-4 w-4 mr-2" />
                   {t.common.writeNote}
                 </Button>
+                
+                {onBulkContextModeChange && notes && notes.length > 0 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('full')}>
+                        <List className="h-4 w-4 mr-2" />
+                        {language.startsWith('zh') ? '全部设为参考全文' : 'Set All to Full Text'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onBulkContextModeChange('off')}>
+                        <Ban className="h-4 w-4 mr-2" />
+                        {language.startsWith('zh') ? '全部设为不参考' : 'Set All to Off'}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+                
                 {collapseButton}
               </div>
             </div>
