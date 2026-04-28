@@ -28,6 +28,17 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 })
 
+class ResizeObserverMock {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+Object.defineProperty(globalThis, 'ResizeObserver', {
+  writable: true,
+  value: ResizeObserverMock,
+})
+
 // Mock @/lib/hooks/use-translation with full locale structure
 vi.mock('../lib/hooks/use-translation', () => {
   const t = (key: string) => key
@@ -45,9 +56,12 @@ vi.mock('../lib/hooks/use-translation', () => {
 // Mock @/lib/hooks/use-auth
 vi.mock('@/lib/hooks/use-auth', () => ({
   useAuth: vi.fn(() => ({
-    user: { id: '1', email: 'test@example.com' },
+    login: vi.fn(),
     logout: vi.fn(),
     isLoading: false,
+    error: null,
+    isAuthenticated: true,
+    username: 'testuser',
   })),
 }))
 

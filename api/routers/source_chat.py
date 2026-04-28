@@ -6,9 +6,11 @@ from fastapi import APIRouter, HTTPException, Path
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from open_notebook.config import LANGGRAPH_SOURCE_CHAT_CHECKPOINT_FILE
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Source
 from open_notebook.exceptions import (
@@ -16,8 +18,6 @@ from open_notebook.exceptions import (
 )
 from open_notebook.graphs.source_chat import source_chat_graph as source_chat_graph
 from open_notebook.graphs.source_chat import source_chat_state
-from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from open_notebook.utils.graph_utils import get_session_message_count
 
 router = APIRouter()
@@ -460,7 +460,7 @@ async def stream_source_chat_response(
         # (Fall back on final message if no chunks were streamed)
         yielded_ai_chunks = False
             
-        async with AsyncSqliteSaver.from_conn_string(LANGGRAPH_CHECKPOINT_FILE) as saver:
+        async with AsyncSqliteSaver.from_conn_string(LANGGRAPH_SOURCE_CHAT_CHECKPOINT_FILE) as saver:
             async_graph = source_chat_state.compile(checkpointer=saver)
             
             # Use specific events based on LangChain's structure
@@ -602,8 +602,9 @@ async def stream_source_chat_response(
         yield f"data: {json.dumps(completion_event)}\n\n"
 
     except Exception as e:
-        from open_notebook.utils.error_classifier import classify_error
         import traceback
+
+        from open_notebook.utils.error_classifier import classify_error
 
         _, user_message = classify_error(e)
         logger.error(f"Error in source chat streaming: {str(e)}\n{traceback.format_exc()}")

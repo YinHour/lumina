@@ -699,3 +699,110 @@ class NotebookDeleteResponse(BaseModel):
     unlinked_sources: int = Field(
         ..., description="Number of sources unlinked from notebook"
     )
+
+
+# Auth API models
+class LoginRequest(BaseModel):
+    username: str = Field(..., description="Username")
+    password: str = Field(..., description="Password")
+
+
+class LoginResponse(BaseModel):
+    success: bool = Field(..., description="Whether login was successful")
+    token: Optional[str] = Field(None, description="JWT token for subsequent requests")
+    username: Optional[str] = Field(None, description="Logged in username")
+    message: Optional[str] = Field(None, description="Error message on failure")
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., description="Current password")
+    new_password: str = Field(..., description="New password (min 4 characters)")
+
+
+class ChangePasswordResponse(BaseModel):
+    success: bool = Field(..., description="Whether password change was successful")
+    message: str = Field(..., description="Result message")
+
+
+class SetupRequest(BaseModel):
+    username: str = Field(..., description="Admin username to create")
+    password: str = Field(..., description="Admin password (min 4 characters)")
+
+
+class UserResponse(BaseModel):
+    username: str
+    created: str
+    updated: str
+
+
+class AuthStatusResponse(BaseModel):
+    auth_enabled: bool = Field(..., description="Whether authentication is active")
+    auth_method: str = Field(
+        ..., description="Auth method: 'legacy' (env var), 'database' (JWT), or 'disabled'"
+    )
+    has_users: bool = Field(
+        ..., description="Whether any users exist in the database"
+    )
+    message: str = Field(..., description="Status message")
+
+
+# Email verification models
+class SendCodeRequest(BaseModel):
+    email: str = Field(..., description="Email address to send verification code to")
+    purpose: Literal["register", "reset_password"] = Field(
+        ..., description="Purpose of the code: 'register' or 'reset_password'"
+    )
+    language: Literal["en", "zh-CN"] = Field(
+        "en", description="Language for the email: 'en' or 'zh-CN'"
+    )
+
+
+class SendCodeResponse(BaseModel):
+    success: bool = Field(..., description="Whether the code was sent successfully")
+    message: str = Field(..., description="Result message")
+    expires_in_seconds: int = Field(
+        default=600, description="How long the code is valid (seconds)"
+    )
+
+
+class RegisterRequest(BaseModel):
+    email: str = Field(..., description="Email address for the new account")
+    code: str = Field(..., description="6-digit verification code")
+    password: str = Field(..., description="Password for the new account (min 6 characters)")
+    language: Literal["en", "zh-CN"] = Field(
+        "en", description="Language for confirmation email: 'en' or 'zh-CN'"
+    )
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("Password must be at least 6 characters")
+        return v
+
+
+class RegisterResponse(BaseModel):
+    success: bool = Field(..., description="Whether registration succeeded")
+    message: str = Field(..., description="Result message")
+    username: Optional[str] = Field(None, description="Created username (email)")
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str = Field(..., description="Email address of the account")
+    code: str = Field(..., description="6-digit verification code")
+    new_password: str = Field(..., description="New password (min 6 characters)")
+    language: Literal["en", "zh-CN"] = Field(
+        "en", description="Language for confirmation email: 'en' or 'zh-CN'"
+    )
+
+    @field_validator("new_password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 6:
+            raise ValueError("Password must be at least 6 characters")
+        return v
+
+
+class ResetPasswordResponse(BaseModel):
+    success: bool = Field(..., description="Whether reset succeeded")
+    message: str = Field(..., description="Result message")

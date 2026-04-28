@@ -18,7 +18,7 @@ Open Notebook is an open-source, privacy-focused alternative to Google's Noteboo
 ### How is it different from Google Notebook LM?
 
 **Privacy**: Your data stays local by default. Only your chosen AI providers receive queries.
-**Flexibility**: Support for 17+ AI providers (OpenAI, Anthropic, Google, local models, etc.)
+**Flexibility**: Support for 18+ AI providers (OpenAI, Anthropic, Google, local models, etc.)
 **Customization**: Open source, so you can modify and extend functionality
 **Control**: You control your data, models, and processing
 
@@ -156,7 +156,8 @@ tar -xzf backup-20240101.tar.gz
 ### What are the security best practices?
 
 - Never share API keys publicly
-- Use `OPEN_NOTEBOOK_PASSWORD` for public deployments
+- Prefer the built-in username/password login and JWT sessions for normal deployments
+- Use `OPEN_NOTEBOOK_PASSWORD` only if you intentionally want legacy shared-password mode
 - Use HTTPS for production (via reverse proxy)
 - Keep Docker images updated
 - Encrypt backups if they contain sensitive data
@@ -170,13 +171,13 @@ tar -xzf backup-20240101.tar.gz
 **Yes**: Open Notebook provides a REST API:
 - Full API documentation at `http://localhost:5055/docs`
 - Support for all UI functionality
-- Authentication via password header
+- Authentication via `/api/auth/login` + Bearer JWT (legacy shared-password mode is still supported)
 
 ### Can I run Open Notebook in production?
 
 **Yes**: Designed for production use with:
 - Docker deployment
-- Security features (password protection)
+- Security features (built-in username/password auth, JWT sessions, optional legacy shared-password mode)
 - Monitoring and logging
 - Reverse proxy support (nginx, Caddy, Traefik)
 
@@ -241,7 +242,7 @@ Include:
 - System information
 - Configuration details (without API keys)
 
-Submit to: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
+Submit to: [GitHub Issues](https://github.com/YinHour/lumina/issues)
 
 ### Where can I get help?
 

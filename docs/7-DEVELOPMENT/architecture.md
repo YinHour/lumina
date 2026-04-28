@@ -57,7 +57,7 @@ Open Notebook is built on a **three-tier, async-first architecture** designed fo
 **Purpose**: Responsive, interactive user interface for research, notes, chat, and podcast management.
 
 **Technology Stack**:
-- **Framework**: Next.js 15 with React 19
+- **Framework**: Next.js 16 with React 19
 - **Language**: TypeScript with strict type checking
 - **State Management**: Zustand (lightweight store) + TanStack Query (server state)
 - **Styling**: Tailwind CSS + Shadcn/ui component library
@@ -776,7 +776,7 @@ Async job submission (source processing, podcast generation) prevents request ti
 
 - **Migrations run automatically** on every startup; check logs for errors
 - **SurrealDB must be running** before starting API (connection test in lifespan)
-- **Auth middleware is basic** (password-only); upgrade to OAuth/JWT for production
+- **Auth middleware supports dual mode**: legacy shared-password auth via `OPEN_NOTEBOOK_PASSWORD`, or database-backed username/password login with JWT for current deployments
 
 ### Database Operations
 

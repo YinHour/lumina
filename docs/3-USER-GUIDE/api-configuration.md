@@ -302,10 +302,11 @@ API keys stored in the database are encrypted using Fernet (AES-128-CBC + HMAC-S
 
 | Setting | Default Value | Production Recommendation |
 |---------|---------------|---------------------------|
-| Password | `open-notebook-change-me` | Set `OPEN_NOTEBOOK_PASSWORD` |
+| App login | No default database user is guaranteed | Complete setup/login flow in the app |
+| Legacy shared password | Disabled unless `OPEN_NOTEBOOK_PASSWORD` is set | Use only for backward-compatible deployments |
 | Encryption Key | None (must be set) | Set `OPEN_NOTEBOOK_ENCRYPTION_KEY` to any secret string |
 
-**For production deployments, always set custom credentials.**
+**For production deployments, always set a custom encryption key and use the normal username/password + JWT login flow unless you intentionally need legacy shared-password mode.**
 
 ---
 

@@ -106,7 +106,7 @@ Before installing, you'll need:
 ### For Source Installation (Developers)
 1. Have Python 3.11+, Node.js 18+, Git installed
 2. Follow [From Source](from-source.md)
-3. Run `make start-all`
+3. Run `./dev-init.sh` (preferred) or start services manually as documented
 4. Access at `http://localhost:8502` (frontend) or `http://localhost:5055` (API)
 
 ---
@@ -132,7 +132,7 @@ Once you're up and running:
 ## Need Help?
 
 - **Discord**: [Join community](https://discord.gg/37XJPXfz2w)
-- **GitHub Issues**: [Report problems](https://github.com/lfnovo/open-notebook/issues)
+- **GitHub Issues**: [Report problems](https://github.com/YinHour/lumina/issues)
 - **Docs**: See [Full Documentation](../index.md)
 
 ---

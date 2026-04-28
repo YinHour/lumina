@@ -8,8 +8,8 @@ Before you start, ensure you have the following installed:
 
 - **Python 3.11+** - Check with: `python --version`
 - **uv** (recommended) or **pip** - Install from: https://github.com/astral-sh/uv
-- **SurrealDB** - Via Docker or binary (see below)
-- **Docker** (optional) - For containerized database
+- **SurrealDB v2** - Via local binary or Docker (v2 is required for current migrations)
+- **Docker** (optional) - Only if you want a containerized database instead of the preferred local workflow
 - **Node.js 18+** (optional) - For frontend development
 - **Git** - For version control
 
@@ -17,8 +17,8 @@ Before you start, ensure you have the following installed:
 
 ```bash
 # Clone the repository
-git clone https://github.com/lfnovo/open-notebook.git
-cd open-notebook
+git clone https://github.com/YinHour/lumina.git
+cd lumina
 
 # Add upstream remote for keeping your fork updated
 git remote add upstream https://github.com/lfnovo/open-notebook.git
@@ -47,17 +47,20 @@ Edit `.env` with your settings:
 
 ```bash
 # Database
-SURREAL_URL=ws://localhost:8000/rpc
+SURREAL_URL=ws://127.0.0.1:8000/rpc
 SURREAL_USER=root
-SURREAL_PASSWORD=password
+SURREAL_PASSWORD=root
 SURREAL_NAMESPACE=open_notebook
-SURREAL_DATABASE=development
+SURREAL_DATABASE=open_notebook
 
 # Credential encryption (required for storing API keys)
 OPEN_NOTEBOOK_ENCRYPTION_KEY=my-dev-secret-key
 
+# Optional for auth flow testing
+EMAIL_PROVIDER=debug
+ALLOW_PUBLIC_REGISTRATION=true
+
 # Application
-APP_PASSWORD=  # Optional password protection
 DEBUG=true
 LOG_LEVEL=DEBUG
 ```
@@ -83,9 +86,45 @@ For local development, you can also use:
 
 > **Note:** API key environment variables (e.g., `OPENAI_API_KEY`) are deprecated. Use the Settings UI to manage credentials instead.
 
-## Step 4: Start SurrealDB
+## Step 4: Start the local development stack (recommended)
 
-### Option A: Using Docker (Recommended)
+For daily Lumina development, use the one-command local workflow:
+
+```bash
+./dev-init.sh
+```
+
+This script:
+
+1. Loads `.env`
+2. Reuses an existing SurrealDB instance or auto-starts a local SurrealDB v2 binary
+3. Starts the API on port 5055
+4. Waits for `GET /api/auth/status` to become healthy
+5. Starts the worker and frontend
+6. Cleans up processes it started when you press `Ctrl+C`
+
+Optional overrides:
+
+```bash
+FRONTEND_PORT=3001 ./dev-init.sh
+START_LOCAL_SURREAL=false ./dev-init.sh
+LOCAL_SURREAL_BINARY=$HOME/Library/Caches/surrealdb/surreal_v2 ./dev-init.sh
+```
+
+## Step 5: Start SurrealDB manually (optional advanced workflow)
+
+### Option A: Using local SurrealDB v2 binary
+
+```bash
+$HOME/Library/Caches/surrealdb/surreal_v2 start \
+  --log info \
+  --bind 127.0.0.1:8000 \
+  --user root \
+  --pass root \
+  rocksdb:./.dev-data/surreal
+```
+
+### Option B: Using Docker
 
 ```bash
 # Start SurrealDB in memory
@@ -102,13 +141,13 @@ docker run -d --name surrealdb -p 8000:8000 \
   --bind 0.0.0.0:8000 file:/data/surreal.db
 ```
 
-### Option B: Using Make
+### Option C: Using Make
 
 ```bash
 make database
 ```
 
-### Option C: Using Docker Compose
+### Option D: Using Docker Compose
 
 ```bash
 docker compose up -d surrealdb
@@ -121,7 +160,7 @@ docker compose up -d surrealdb
 curl http://localhost:8000/
 ```
 
-## Step 5: Run Database Migrations
+## Step 6: Run Database Migrations
 
 Database migrations run automatically when you start the API. The first startup will apply any pending migrations.
 
@@ -140,13 +179,13 @@ Running migration 002_add_vectors
 Migrations completed successfully
 ```
 
-## Step 6: Start the API Server
+## Step 7: Start the API Server
 
 In a new terminal window:
 
 ```bash
 # Terminal 2: Start API (port 5055)
-uv run --env-file .env uvicorn api.main:app --host 0.0.0.0 --port 5055
+uv run --env-file .env run_api.py
 
 # Or using the shortcut
 make api
@@ -168,7 +207,7 @@ curl http://localhost:5055/health
 open http://localhost:5055/docs
 ```
 
-## Step 7: Start the Frontend (Optional)
+## Step 8: Start the Frontend (Optional)
 
 If you want to work on the frontend, start Next.js in another terminal:
 
@@ -195,20 +234,32 @@ Open your browser to: http://localhost:3000
 After setup, verify everything is working:
 
 - [ ] **SurrealDB**: `curl http://localhost:8000/` returns content
-- [ ] **API**: `curl http://localhost:5055/health` returns `{"status": "ok"}`
+- [ ] **API health**: `curl http://localhost:5055/health` returns `{"status": "healthy"}`
+- [ ] **Auth status**: `curl http://localhost:5055/api/auth/status` returns JSON
 - [ ] **API Docs**: `open http://localhost:5055/docs` works
 - [ ] **Database**: API logs show migrations completing
 - [ ] **Frontend** (optional): `http://localhost:3000` loads
+
+## Authentication flows available during development
+
+The current auth system is no longer a single password page only.
+
+- `/login` → username + password login
+- `/register` → public registration when `ALLOW_PUBLIC_REGISTRATION=true`
+- `/forgot-password` → email verification code + password reset
+- `/api/auth/status` → reports whether auth is disabled, legacy, or database-backed
+
+For local verification without real email delivery, set `EMAIL_PROVIDER=debug` and read the generated verification code from the API log.
 
 ## Starting Services Together
 
 ### Quick Start All Services
 
 ```bash
-make start-all
+./dev-init.sh
 ```
 
-This starts SurrealDB, API, and frontend in one command.
+This is the preferred all-in-one local startup command for Lumina.
 
 ### Individual Terminals (Recommended for Development)
 
@@ -306,10 +357,10 @@ git push origin feature/my-feature -f
 **Problem**: API can't connect to SurrealDB
 
 **Solutions**:
-1. Check if SurrealDB is running: `docker ps | grep surrealdb`
-2. Verify URL in `.env`: Should be `ws://localhost:8000/rpc`
-3. Restart SurrealDB: `docker stop surrealdb && docker rm surrealdb`
-4. Then restart with: `docker run -d --name surrealdb -p 8000:8000 surrealdb/surrealdb:v2 start --user root --pass password --bind 0.0.0.0:8000 memory`
+1. Check if SurrealDB is running: `lsof -i :8000`
+2. Verify URL in `.env`: Should be `ws://127.0.0.1:8000/rpc`
+3. Confirm you are using SurrealDB v2, not v3
+4. Restart with `./dev-init.sh` or start the local v2 binary manually
 
 ### "Address already in use"
 

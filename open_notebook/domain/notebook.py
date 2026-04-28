@@ -574,7 +574,6 @@ class Source(ObjectModel):
             )
             
             # Delete associated knowledge graph entities and relations
-            import os
             if os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true":
                 await repo_query(
                     "DELETE kg_entity WHERE source_id = $source_id_str",
