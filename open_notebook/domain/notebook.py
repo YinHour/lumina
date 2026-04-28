@@ -544,8 +544,11 @@ class Source(ObjectModel):
 
     async def delete(self) -> bool:
         """Delete source and clean up associated file, embeddings, and insights."""
-        # Clean up uploaded file if it exists
-        if self.asset and self.asset.file_path:
+        from open_notebook.domain.content_settings import ContentSettings
+        settings = await ContentSettings.get_instance()
+        
+        # Clean up uploaded file if it exists and auto_delete_files is enabled
+        if settings.auto_delete_files == "yes" and self.asset and self.asset.file_path:
             file_path = Path(self.asset.file_path)
             if file_path.exists():
                 try:
@@ -560,6 +563,8 @@ class Source(ObjectModel):
                 logger.debug(
                     f"File {file_path} not found for source {self.id}, skipping cleanup"
                 )
+        elif self.asset and self.asset.file_path:
+            logger.info(f"File deletion skipped for source {self.id} due to auto_delete_files setting")
 
         # Delete associated embeddings and insights to prevent orphaned records
         try:

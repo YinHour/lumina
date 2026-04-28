@@ -7,6 +7,16 @@ import { z } from 'zod'
 import { LoaderIcon, CheckCircleIcon, XCircleIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -24,6 +34,7 @@ import { useCreateSource } from '@/lib/hooks/use-sources'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { CreateSourceRequest } from '@/lib/types/api'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { sourcesApi } from '@/lib/api/sources'
 
 const MAX_BATCH_SIZE = 50
 
@@ -90,7 +101,7 @@ export function AddSourceDialog({
   onOpenChange, 
   defaultNotebookId 
 }: AddSourceDialogProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
 
   const WIZARD_STEPS: readonly WizardStep[] = [
     { number: 1, title: t.sources.addSource, description: t.sources.processDescription },
@@ -107,12 +118,18 @@ export function AddSourceDialog({
   )
   const [selectedTransformations, setSelectedTransformations] = useState<string[]>([])
 
+  // Duplicate detection state
+  const [showDuplicateWarning, setShowDuplicateWarning] = useState(false)
+  const [duplicateFiles, setDuplicateFiles] = useState<string[]>([])
+  const [pendingSubmitData, setPendingSubmitData] = useState<CreateSourceFormData | null>(null)
+  
   // Batch-specific state
   const [urlValidationErrors, setUrlValidationErrors] = useState<{ url: string; line: number }[]>([])
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null)
 
   // Cleanup timeouts to prevent memory leaks
   const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const isConfirmingRef = useRef(false)
 
   // API hooks
   const createSource = useCreateSource()
@@ -169,6 +186,22 @@ export function AddSourceDialog({
       }
     }
   }, [])
+
+  // Force pointer-events cleanup when processing state changes
+  useEffect(() => {
+    if (processing) {
+      document.body.style.pointerEvents = 'auto'
+      document.body.style.removeProperty('pointer-events')
+    }
+  }, [processing])
+  
+  // Also force pointer-events cleanup when duplicate warning closes
+  useEffect(() => {
+    if (!showDuplicateWarning) {
+      document.body.style.pointerEvents = 'auto'
+      document.body.style.removeProperty('pointer-events')
+    }
+  }, [showDuplicateWarning])
 
   const selectedType = watch('type')
   const watchedUrl = watch('url')
@@ -310,10 +343,18 @@ export function AddSourceDialog({
       async_processing: true,
     }
 
-    if (data.type === 'upload' && data.file) {
-      const file = data.file instanceof FileList ? data.file[0] : data.file
-      const requestWithFile = createRequest as CreateSourceRequest & { file?: File }
-      requestWithFile.file = file
+    if (data.type === 'upload') {
+      let file: File | undefined;
+      
+      if (data.file) {
+        file = data.file instanceof FileList ? data.file[0] : 
+               (Array.isArray(data.file) ? data.file[0] : data.file);
+      }
+      
+      if (file) {
+        const requestWithFile = createRequest as CreateSourceRequest & { file?: File }
+        requestWithFile.file = file
+      }
     }
 
     await createSource.mutateAsync(createRequest)
@@ -326,9 +367,9 @@ export function AddSourceDialog({
 
     // Collect items to process
     if (data.type === 'link' && parsedUrls.length > 0) {
-      parsedUrls.forEach(url => items.push({ type: 'url', value: url }))
+      parsedUrls.forEach((url: string) => items.push({ type: 'url', value: url }))
     } else if (data.type === 'upload' && parsedFiles.length > 0) {
-      parsedFiles.forEach(file => items.push({ type: 'file', value: file }))
+      parsedFiles.forEach((file: File) => items.push({ type: 'file', value: file }))
     }
 
     setBatchProgress({
@@ -383,10 +424,115 @@ export function AddSourceDialog({
   }
 
   // Form submission
-  const onSubmit = async (data: CreateSourceFormData) => {
-    try {
-      setProcessing(true)
+  const onSubmit = async (data: CreateSourceFormData, skipDuplicateCheck = false) => {
+    // If the event object is accidentally passed as the second argument, ignore it
+    if (typeof skipDuplicateCheck !== 'boolean') {
+      skipDuplicateCheck = false;
+    }
+    
+    console.log('onSubmit triggered', { data, skipDuplicateCheck, processing })
+    if (skipDuplicateCheck) {
+      toast.info('onSubmit 被调用，跳过重复检查')
+    }
+    
+    // Check if we are already processing and NOT skipping duplicate check
+    // If we are skipping duplicate check, we might already be in processing state
+    // because handleConfirmDuplicate sets it to true before calling onSubmit
+    if (processing && !skipDuplicateCheck) {
+      console.log('Already processing, ignoring submission')
+      return
+    }
 
+    // Always force processing state to true to show loading UI
+    console.log('Setting processing to true in onSubmit')
+    setProcessing(true)
+    
+    // If we are skipping duplicate check, we don't need to wait for state to settle
+    // because we already did that in handleConfirmDuplicate
+    if (!skipDuplicateCheck) {
+      // Wait a tiny bit for state to settle before starting heavy work
+      // This is crucial for React to render the processing state before we block the thread
+      // We use a small timeout to allow the UI to update
+      await new Promise(resolve => setTimeout(resolve, 0))
+      console.log('Finished waiting for state to settle')
+    }
+    
+    // Duplicate check for file uploads
+    if (data.type === 'upload' && !skipDuplicateCheck) {
+      const duplicates: string[] = []
+      
+      const checkDuplicate = async (filename: string) => {
+        const lastDotIndex = filename.lastIndexOf('.')
+        const stem = lastDotIndex !== -1 ? filename.substring(0, lastDotIndex) : filename
+        const suffix = lastDotIndex !== -1 ? filename.substring(lastDotIndex) : ''
+
+        try {
+          const results = await sourcesApi.list({ title_contains: stem, limit: 50 })
+          if (!results || results.length === 0) return false
+
+          const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const regex = new RegExp(`^${escapeRegExp(stem)}( \\(\\d+\\))?${escapeRegExp(suffix)}$`)
+
+          return results.some(source => source.title && regex.test(source.title))
+        } catch (e) {
+          console.error('Failed to check duplicate for', filename, e)
+          return false
+        }
+      }
+
+      if (isBatchMode && parsedFiles.length > 0) {
+        // Check each file against the backend
+        for (const file of parsedFiles) {
+          if (await checkDuplicate(file.name)) {
+            duplicates.push(file.name)
+          }
+        }
+      } else if (data.file) {
+        const file = data.file instanceof FileList ? data.file[0] : data.file
+        if (file && await checkDuplicate(file.name)) {
+          duplicates.push(file.name)
+        }
+      }
+
+      if (duplicates.length > 0) {
+        console.log('Duplicates found, showing warning. Data:', data)
+        setDuplicateFiles(duplicates)
+        
+        // Save the raw data directly to avoid any React Hook Form proxy issues
+        // But we need to make sure we don't lose the file reference
+        const dataToSave = { ...data }
+        if (data.file) {
+          dataToSave.file = data.file
+        }
+        
+        console.log('Setting pendingSubmitData:', dataToSave)
+        setPendingSubmitData(dataToSave)
+        
+        // We're stopping submission, so reset processing state
+        setProcessing(false)
+        
+        // Use setTimeout to ensure state is updated before showing dialog
+        setTimeout(() => {
+          setShowDuplicateWarning(true)
+        }, 10)
+        return // Stop submission, wait for user confirmation
+      }
+    }
+
+    try {
+      console.log('Starting processing, setting processing to true')
+      // Ensure processing is true
+      setProcessing(true)
+      
+      // Make sure the warning dialog is closed
+      setShowDuplicateWarning(false)
+      
+      // Wait a tiny bit for state to settle before starting heavy work
+      // This is crucial for React to render the processing state before we block the thread
+      await new Promise(resolve => setTimeout(resolve, 0))
+      
+      console.log('Starting actual submission...', { isBatchMode, data })
+      
       if (isBatchMode) {
         // Batch submission
         setProcessingStatus({ message: t.sources.processingFiles })
@@ -410,6 +556,7 @@ export function AddSourceDialog({
       }
     } catch (error) {
       console.error('Error creating source:', error)
+      toast.error(t.common.errorSubmitting + ': ' + (error instanceof Error ? error.message : String(error)))
       setProcessingStatus({
         message: t.common.error,
       })
@@ -423,11 +570,13 @@ export function AddSourceDialog({
 
   // Dialog management
   const handleClose = () => {
+    console.log('handleClose triggered')
     // Clear any pending timeouts
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current)
       timeoutRef.current = null
     }
+    isConfirmingRef.current = false
 
     reset()
     setCurrentStep(1)
@@ -436,7 +585,14 @@ export function AddSourceDialog({
     setSelectedNotebooks(defaultNotebookId ? [defaultNotebookId] : [])
     setUrlValidationErrors([])
     setBatchProgress(null)
-
+    setShowDuplicateWarning(false)
+    setPendingSubmitData(null)
+    
+    // Clear files after a delay to let the dialog animate out
+    setTimeout(() => {
+      setDuplicateFiles([])
+    }, 300)
+    
     // Reset to default transformations
     if (transformations.length > 0) {
       const defaultTransformations = transformations
@@ -448,6 +604,71 @@ export function AddSourceDialog({
     }
 
     onOpenChange(false)
+  }
+
+  const handleConfirmDuplicate = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    
+    console.log('handleConfirmDuplicate triggered', { pendingSubmitData })
+
+    if (pendingSubmitData) {
+      isConfirmingRef.current = true
+      
+      // We must extract the data immediately before any state changes
+      // React Hook Form data can be lost if the component re-renders
+      const dataToSubmit = { ...pendingSubmitData }
+      if (pendingSubmitData.file) {
+        dataToSubmit.file = pendingSubmitData.file
+      }
+      
+      console.log('Calling onSubmit with dataToSubmit:', dataToSubmit)
+      toast.info('确认继续上传，准备提交...')
+      
+      // Now close the warning dialog immediately to avoid any interaction issues
+      setShowDuplicateWarning(false)
+      
+      // Force processing true immediately so the UI switches to loading state
+      setProcessing(true)
+      
+      // Call onSubmit directly without setTimeout so it runs in the same event loop
+      // This ensures the form data is still valid
+      try {
+        // We MUST pass true for skipDuplicateCheck here
+        // Call it immediately without setTimeout to avoid losing form context
+        onSubmit(dataToSubmit, true).catch(err => {
+          console.error('Error in onSubmit called from handleConfirmDuplicate:', err)
+          setProcessing(false) // Reset on error
+        }).finally(() => {
+          isConfirmingRef.current = false
+          // Clear pending data only after submission is complete or failed
+          setPendingSubmitData(null)
+        })
+      } catch (err) {
+        console.error('Synchronous error in onSubmit:', err)
+        isConfirmingRef.current = false
+        setPendingSubmitData(null)
+        setProcessing(false) // Reset on error
+      }
+      
+    } else {
+      console.log('No pendingSubmitData found, just closing dialog')
+      setShowDuplicateWarning(false)
+    }
+  }
+
+  const handleCancelDuplicate = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    console.log('handleCancelDuplicate triggered')
+    isConfirmingRef.current = false
+    setShowDuplicateWarning(false)
+    setPendingSubmitData(null)
+    
+    // Clear files after a delay to let the dialog animate out
+    setTimeout(() => {
+      setDuplicateFiles([])
+    }, 300)
   }
 
   // Processing view
@@ -533,16 +754,32 @@ export function AddSourceDialog({
   const currentStepValid = isStepValid(currentStep)
 
   return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[700px] p-0">
-        <DialogHeader className="px-6 pt-6 pb-0">
-          <DialogTitle>{t.sources.addNew}</DialogTitle>
-          <DialogDescription>
-            {t.sources.processDescription}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent 
+          className="sm:max-w-[700px] p-0"
+          onInteractOutside={(e) => {
+            if (showDuplicateWarning) {
+              e.preventDefault()
+            }
+          }}
+          onEscapeKeyDown={(e) => {
+            if (showDuplicateWarning) {
+              e.preventDefault()
+            }
+          }}
+        >
+          <DialogHeader className="px-6 pt-6 pb-0">
+            <DialogTitle>{t.sources.addNew}</DialogTitle>
+            <DialogDescription>
+              {t.sources.processDescription}
+            </DialogDescription>
+          </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="min-w-0">
+          <form onSubmit={handleSubmit((data) => {
+            console.log('Form submitted via handleSubmit', data)
+            onSubmit(data)
+          })} className="min-w-0" id="add-source-form">
           <WizardContainer
             currentStep={currentStep}
             steps={WIZARD_STEPS}
@@ -630,5 +867,83 @@ export function AddSourceDialog({
         </form>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={showDuplicateWarning} onOpenChange={(open) => {
+      console.log('AlertDialog onOpenChange', open)
+      
+      // If the dialog is being opened, just set the state
+      if (open) {
+        setShowDuplicateWarning(true)
+        return
+      }
+      
+      // Dialog is being closed
+      
+      // If we are currently confirming (user clicked "Yes"), do nothing here
+      // The handleConfirmDuplicate function will manage the state
+      if (isConfirmingRef.current) {
+        console.log('AlertDialog closed while confirming, ignoring')
+        return
+      }
+      
+      // If we have pending data but aren't confirming, it's a cancel
+      // (e.g. user clicked outside the dialog or pressed Escape)
+      if (pendingSubmitData) {
+        console.log('AlertDialog closed by clicking outside, canceling')
+        // We only cancel if processing hasn't started yet
+        if (!processing) {
+          setShowDuplicateWarning(false)
+          // We must clear pendingSubmitData here if it's a true cancel
+          // otherwise it might interfere with future submissions
+          setPendingSubmitData(null) 
+          
+          setTimeout(() => {
+            setDuplicateFiles([])
+          }, 300)
+        }
+        return
+      }
+      
+      // Normal close (no pending data)
+      setShowDuplicateWarning(false)
+      
+      setTimeout(() => {
+        setDuplicateFiles([])
+      }, 300)
+    }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {language.startsWith('zh') ? '发现同名文件' : 'Duplicate Files Detected'}
+          </AlertDialogTitle>
+          <div className="text-muted-foreground text-sm">
+            {language.startsWith('zh') 
+              ? '系统检测到以下文件可能已经上传过：' 
+              : 'The system detected that the following files may have already been uploaded:'}
+            <ul className="list-disc pl-5 mt-2 mb-2 max-h-[150px] overflow-y-auto">
+              {duplicateFiles.map((file, i) => (
+                <li key={i} className="text-sm font-medium text-foreground">{file}</li>
+              ))}
+            </ul>
+            {language.startsWith('zh') ? '是否继续上传？' : 'Do you want to continue uploading?'}
+          </div>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button type="button" variant="outline" onClick={(e) => {
+            console.log('Cancel button clicked')
+            handleCancelDuplicate(e)
+          }}>
+            {language.startsWith('zh') ? '否 (取消)' : 'No (Cancel)'}
+          </Button>
+          <Button type="button" onClick={(e) => {
+            console.log('Confirm button clicked')
+            handleConfirmDuplicate(e)
+          }}>
+            {language.startsWith('zh') ? '是 (继续上传)' : 'Yes (Continue Upload)'}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>
   )
 }
