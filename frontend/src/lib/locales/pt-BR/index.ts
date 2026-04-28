@@ -736,6 +736,7 @@ export const ptBR = {
     simple: "Simples",
     docling: "Docling",
     mineru: "MinerU",
+    markitdown: "MarkItDown",
     helpMeChoose: "Ajude-me a escolher",
     docHelp: "· Docling é um pouco mais lento, mas mais preciso, especialmente se os documentos contêm tabelas e imagens. · Simples extrairá qualquer conteúdo do documento sem formatá-lo. · Auto (recomendado) tentará processar através do docling e usará simples como fallback.",
     firecrawl: "Firecrawl",

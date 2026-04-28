@@ -284,21 +284,27 @@ class RebuildStatusResponse(BaseModel):
 
 
 # Settings API models
+DocumentProcessingEngine = Literal["auto", "docling", "mineru", "markitdown", "simple"]
+UrlProcessingEngine = Literal["auto", "firecrawl", "jina", "simple"]
+EmbeddingOption = Literal["ask", "always", "never"]
+AutoDeleteFilesOption = Literal["yes", "no"]
+
+
 class SettingsResponse(BaseModel):
-    default_content_processing_engine_doc: Optional[str] = None
-    default_content_processing_engine_url: Optional[str] = None
-    default_embedding_option: Optional[str] = None
-    auto_delete_files: Optional[str] = None
+    default_content_processing_engine_doc: Optional[DocumentProcessingEngine] = None
+    default_content_processing_engine_url: Optional[UrlProcessingEngine] = None
+    default_embedding_option: Optional[EmbeddingOption] = None
+    auto_delete_files: Optional[AutoDeleteFilesOption] = None
     youtube_preferred_languages: Optional[List[str]] = None
     tavily_api_key: Optional[str] = None
     tavily_include_domains: Optional[str] = None
 
 
 class SettingsUpdate(BaseModel):
-    default_content_processing_engine_doc: Optional[str] = None
-    default_content_processing_engine_url: Optional[str] = None
-    default_embedding_option: Optional[str] = None
-    auto_delete_files: Optional[str] = None
+    default_content_processing_engine_doc: Optional[DocumentProcessingEngine] = None
+    default_content_processing_engine_url: Optional[UrlProcessingEngine] = None
+    default_embedding_option: Optional[EmbeddingOption] = None
+    auto_delete_files: Optional[AutoDeleteFilesOption] = None
     youtube_preferred_languages: Optional[List[str]] = None
     tavily_api_key: Optional[str] = None
     tavily_include_domains: Optional[str] = None

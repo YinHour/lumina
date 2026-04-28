@@ -134,18 +134,8 @@ export function LoginForm() {
   }
 
   return (
-    <div
-      className="relative min-h-screen overflow-hidden bg-[#ece2d4] bg-contain bg-center bg-no-repeat px-4 py-8 sm:px-6"
-      style={{
-        backgroundImage: "linear-gradient(rgba(244, 238, 229, 0.14), rgba(232, 222, 209, 0.28)), url('/images/loginpage-bg-new.png')",
-      }}
-    >
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_120%_120%_at_50%_50%,transparent_30%,rgba(237,227,212,0.55)_70%,rgba(200,185,165,0.75)_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,248,238,0.02),rgba(255,248,238,0.1)_58%,rgba(237,227,212,0.26))]" />
-      <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#ede3d4]/22 via-[#ede3d4]/8 to-transparent" />
-
-      <div className="relative z-10 flex min-h-[calc(100vh-4rem)] items-end justify-center pb-24 sm:pb-28">
-        <div className="w-full max-w-[560px] text-stone-700">
+    <div className="min-h-screen flex items-center justify-center bg-stone-100 px-4 py-8 sm:px-6">
+      <div className="w-full max-w-[560px] text-stone-700">
           <div className="px-7 py-7 sm:px-8 sm:py-8">
             <form onSubmit={handleSubmit} className="space-y-5 text-left font-fangsong" aria-label="Login form">
               <label className="sr-only" htmlFor="login-username">{t.auth.usernamePlaceholder}</label>
@@ -242,7 +232,6 @@ export function LoginForm() {
             </div>
           )}
         </div>
-      </div>
     </div>
   )
 }

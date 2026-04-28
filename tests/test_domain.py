@@ -376,6 +376,24 @@ class TestContentSettings:
         assert settings.auto_delete_files == "yes"
         assert len(settings.youtube_preferred_languages) > 0
 
+    def test_content_settings_accepts_markitdown_env(self, monkeypatch):
+        """Test ContentSettings accepts MarkItDown as document engine from env."""
+        ContentSettings.clear_instance()
+        monkeypatch.setenv("CCORE_DOCUMENT_ENGINE", "markitdown")
+
+        settings = ContentSettings()
+
+        assert settings.default_content_processing_engine_doc == "markitdown"
+
+    def test_content_settings_invalid_doc_engine_falls_back_to_auto(self, monkeypatch):
+        """Test invalid document engine env values fall back to auto."""
+        ContentSettings.clear_instance()
+        monkeypatch.setenv("CCORE_DOCUMENT_ENGINE", "invalid")
+
+        settings = ContentSettings()
+
+        assert settings.default_content_processing_engine_doc == "auto"
+
 
 # ============================================================================
 # TEST SUITE 9: Episode Profile Validation

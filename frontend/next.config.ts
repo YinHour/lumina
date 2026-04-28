@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Allow opening dev server via 127.0.0.1 without Next.js blocking HMR/assets as cross-origin
-  allowedDevOrigins: ['127.0.0.1'],
+  allowedDevOrigins: ['127.0.0.1', '192.168.10.237', '0.0.0.0'],
 
   // Enable standalone output for optimized Docker deployment
   output: "standalone",

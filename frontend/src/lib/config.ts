@@ -100,9 +100,11 @@ async function fetchConfig(): Promise<AppConfig> {
       console.log('🔧 [Config] Using relative path (rewrites) as default')
   }
 
-  // Priority: Runtime config > Build-time env var > Smart default
-  // Note: runtimeApiUrl must be checked against null explicitly as empty string might be valid if intended (though we treat '' as null above)
-  const baseUrl = runtimeApiUrl !== null && runtimeApiUrl !== undefined ? runtimeApiUrl : (envApiUrl || defaultApiUrl)
+  // Priority: Explicit env var > Relative path (through Next.js rewrites)
+  // In local dev, always use relative path so the browser only needs to reach port 3000.
+  // Next.js rewrites proxy /api/* to the backend internally (default: http://localhost:5055).
+  // For production with a separate API domain, set NEXT_PUBLIC_API_URL explicitly.
+  const baseUrl = envApiUrl || ''
   if (isDev) {
     console.log('🔧 [Config] Final base URL to try:', baseUrl)
     console.log('🔧 [Config] Selection priority: runtime=' + (runtimeApiUrl ? '✅' : '❌') +

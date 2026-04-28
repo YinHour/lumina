@@ -42,7 +42,7 @@ async def update_settings(settings_update: SettingsUpdate):
             from typing import Literal, cast
 
             settings.default_content_processing_engine_doc = cast(
-                Literal["auto", "docling", "mineru", "simple"],
+                Literal["auto", "docling", "mineru", "markitdown", "simple"],
                 settings_update.default_content_processing_engine_doc,
             )
         if settings_update.default_content_processing_engine_url is not None:

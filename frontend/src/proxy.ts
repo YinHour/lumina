@@ -2,13 +2,7 @@ import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
 export function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl
-
-  // Redirect root to notebooks
-  if (pathname === '/') {
-    return NextResponse.redirect(new URL('/notebooks', request.url))
-  }
-
+  // Proxy rewrites (handled by next.config.js) — no path redirects needed
   return NextResponse.next()
 }
 

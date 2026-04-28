@@ -736,6 +736,7 @@ export const itIT = {
     simple: "Semplice",
     docling: "Docling",
     mineru: "MinerU",
+    markitdown: "MarkItDown",
     helpMeChoose: "Aiutami a scegliere",
     docHelp: "· Docling è un po' più lento ma più accurato, specialmente se i documenti contengono tabelle e immagini. · Semplice estrarrà qualsiasi contenuto dal documento senza formattarlo. · Auto (consigliato) proverà a elaborare tramite docling e userà semplice come fallback.",
     firecrawl: "Firecrawl",

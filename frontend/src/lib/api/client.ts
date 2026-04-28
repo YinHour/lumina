@@ -53,10 +53,22 @@ apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Clear auth and redirect to login
+      // Only redirect to login if the user had a valid token (session expired).
+      // If there's no token, the user was never authenticated — 401 is expected
+      // for public pages hitting endpoints that require optional auth.
       if (typeof window !== 'undefined') {
-        localStorage.removeItem('auth-storage')
-        window.location.href = '/login'
+        const authStorage = localStorage.getItem('auth-storage')
+        let hadToken = false
+        if (authStorage) {
+          try {
+            const { state } = JSON.parse(authStorage)
+            hadToken = !!(state?.token && state.token !== 'not-required')
+          } catch { /* ignore parse errors */ }
+        }
+        if (hadToken) {
+          localStorage.removeItem('auth-storage')
+          window.location.href = '/login'
+        }
       }
     }
     return Promise.reject(error)

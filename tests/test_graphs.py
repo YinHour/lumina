@@ -279,5 +279,52 @@ class TestSaveSourceTitlePreservation:
         mock_source.save.assert_awaited_once()
 
 
+class TestContentProcessMarkItDown:
+    """Test source content_process custom MarkItDown branch."""
+
+    @pytest.mark.asyncio
+    async def test_markitdown_document_engine_bypasses_content_core_validation(self, tmp_path, monkeypatch):
+        from open_notebook.graphs import source as source_graph
+
+        sample = tmp_path / "sample.txt"
+        sample.write_text("# MarkItDown\n\nExtracted by custom branch.", encoding="utf-8")
+
+        class FakeContentSettings:
+            default_content_processing_engine_doc = "markitdown"
+            default_content_processing_engine_url = "auto"
+
+            @classmethod
+            def clear_instance(cls):
+                return None
+
+            @classmethod
+            async def get_instance(cls):
+                return cls()
+
+        class FakeModelManager:
+            async def get_defaults(self):
+                return type("Defaults", (), {"default_speech_to_text_model": None})()
+
+        monkeypatch.setattr(source_graph, "ContentSettings", FakeContentSettings)
+        monkeypatch.setattr(source_graph, "ModelManager", FakeModelManager)
+
+        result = await source_graph.content_process(
+            {
+                "source_id": "source:test",
+                "content_state": {"file_path": str(sample), "title": ""},
+                "apply_transformations": [],
+                "notebook_ids": [],
+                "source": None,
+                "transformation": [],
+                "embed": False,
+            }
+        )
+
+        processed = result["content_state"]
+        assert "Extracted by custom branch" in (processed.content or "")
+        assert processed.title == "sample.txt"
+        assert processed.document_engine == "auto"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

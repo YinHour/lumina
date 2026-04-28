@@ -81,8 +81,6 @@ export default function SourcesPage() {
 
   // Polling for status updates
   useEffect(() => {
-    let interval: NodeJS.Timeout
-
     const pollSources = async () => {
       // Avoid polling if already loading
       if (loading) return
@@ -102,7 +100,7 @@ export default function SourcesPage() {
       }
     }
 
-    interval = setInterval(pollSources, 5000)
+    const interval = setInterval(pollSources, 5000)
     return () => clearInterval(interval)
   }, [page, sortBy, sortOrder, loading])
 

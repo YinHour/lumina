@@ -736,6 +736,7 @@ export const ruRU = {
     simple: "Простой",
     docling: "Docling",
     mineru: "MinerU",
+    markitdown: "MarkItDown",
     helpMeChoose: "Помогите выбрать",
     docHelp: "· Docling немного медленнее, но точнее, особенно для документов с таблицами и изображениями. · Simple извлекает содержимое без форматирования. · Авто (рекомендуется) попробует Docling и переключится на Simple при необходимости.",
     firecrawl: "Firecrawl",

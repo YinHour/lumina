@@ -736,6 +736,7 @@ export const frFR = {
     simple: "Simple",
     docling: "Docling",
     mineru: "MinerU",
+    markitdown: "MarkItDown",
     helpMeChoose: "Aidez-moi à choisir",
     docHelp: "· Docling est un peu plus lent mais plus précis, surtout si les documents contiennent des tableaux et des images. · Simple extraira tout le contenu du document sans le formater. · Auto (recommandé) essaiera de traiter via Docling et se rabattra sur Simple par défaut.",
     firecrawl: "Firecrawl",

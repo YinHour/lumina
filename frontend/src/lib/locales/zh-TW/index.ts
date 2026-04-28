@@ -737,6 +737,7 @@ export const zhTW = {
     simple: "Simple",
     docling: "Docling",
     mineru: "MinerU",
+    markitdown: "MarkItDown",
     helpMeChoose: "幫助我選擇",
     docHelp: "· Docling: 速度稍慢但更準確，特別是包含表格和圖片的文件。 · Simple: 直接提取內容而不進行格式化。 · 自動 (推薦): 優先嘗試 Docling，失敗則回退至 Simple。",
     firecrawl: "Firecrawl",

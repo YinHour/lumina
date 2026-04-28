@@ -736,6 +736,7 @@ export const jaJP = {
     simple: "シンプル",
     docling: "Docling",
     mineru: "MinerU",
+    markitdown: "MarkItDown",
     helpMeChoose: "選び方",
     docHelp: "・Doclingは少し遅いですが、特にテーブルや画像を含むドキュメントでより正確です。・シンプルはフォーマットせずにドキュメントからコンテンツを抽出します。・自動（推奨）はDoclingで処理を試み、失敗した場合はシンプルにフォールバックします。",
     firecrawl: "Firecrawl",

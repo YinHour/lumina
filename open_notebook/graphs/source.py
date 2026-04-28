@@ -10,6 +10,10 @@ from loguru import logger
 from typing_extensions import Annotated, TypedDict
 
 from open_notebook.ai.models import Model, ModelManager
+from open_notebook.content_extractors.markitdown import (
+    extract_markitdown,
+    is_markitdown_supported,
+)
 from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Asset, Source
 from open_notebook.domain.transformation import Transformation
@@ -73,6 +77,15 @@ async def content_process(state: SourceState) -> dict:
             engine = state.get("document_engine")
             file_path = state.get("file_path")
             
+            # Intercept MarkItDown extraction before content-core validation, because
+            # content-core does not know Lumina's custom "markitdown" engine yet.
+            if engine == "markitdown" and file_path and is_markitdown_supported(file_path):
+                logger.info(f"Using MarkItDown to extract content from {file_path}")
+                return extract_markitdown(state)
+            elif engine == "markitdown":
+                logger.warning("MarkItDown does not support this file type. Falling back to simple engine.")
+                state["document_engine"] = "simple"
+
             # Intercept MinerU extraction
             if engine == "mineru" and file_path and file_path.lower().endswith(('.pdf', '.ppt', '.pptx', '.doc', '.docx')):
                 logger.info(f"Using MinerU to extract content from {file_path}")
