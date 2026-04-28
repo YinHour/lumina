@@ -3,15 +3,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { sourcesApi } from '@/lib/api/sources'
-import { SourceListResponse } from '@/lib/types/api'
+import { SourceListResponse, BulkDeleteResponse } from '@/lib/types/api'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { EmptyState } from '@/components/common/EmptyState'
 import { AppShell } from '@/components/layout/AppShell'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
-import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown } from 'lucide-react'
+import { FileText, Link as LinkIcon, Upload, AlignLeft, Trash2, ArrowUpDown, Eye, EyeOff } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { cn } from '@/lib/utils'
@@ -30,6 +31,10 @@ export default function SourcesPage() {
     open: false,
     source: null
   })
+  // Selection state for bulk delete
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [bulkDeleteDialog, setBulkDeleteDialog] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const router = useRouter()
   const tableRef = useRef<HTMLTableElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -117,7 +122,6 @@ export default function SourcesPage() {
           e.preventDefault()
           setSelectedIndex((prev) => {
             const newIndex = Math.min(prev + 1, sources.length - 1)
-            // Scroll to keep selected row visible
             setTimeout(() => scrollToSelectedRow(newIndex), 0)
             return newIndex
           })
@@ -126,7 +130,6 @@ export default function SourcesPage() {
           e.preventDefault()
           setSelectedIndex((prev) => {
             const newIndex = Math.max(prev - 1, 0)
-            // Scroll to keep selected row visible
             setTimeout(() => scrollToSelectedRow(newIndex), 0)
             return newIndex
           })
@@ -159,7 +162,6 @@ export default function SourcesPage() {
     const scrollContainer = scrollContainerRef.current
     if (!scrollContainer) return
 
-    // Find the selected row element
     const rows = scrollContainer.querySelectorAll('tbody tr')
     const selectedRow = rows[index] as HTMLElement
     if (!selectedRow) return
@@ -167,11 +169,9 @@ export default function SourcesPage() {
     const containerRect = scrollContainer.getBoundingClientRect()
     const rowRect = selectedRow.getBoundingClientRect()
 
-    // Check if row is above visible area
     if (rowRect.top < containerRect.top) {
       selectedRow.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
-    // Check if row is below visible area
     else if (rowRect.bottom > containerRect.bottom) {
       selectedRow.scrollIntoView({ behavior: 'smooth', block: 'end' })
     }
@@ -179,12 +179,60 @@ export default function SourcesPage() {
 
   const toggleSort = (field: 'created' | 'updated') => {
     if (sortBy === field) {
-      // Toggle order if clicking the same field
       setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
     } else {
-      // Switch to new field with default desc order
       setSortBy(field)
       setSortOrder('desc')
+    }
+  }
+
+  // Selection handlers
+  const toggleSelect = (sourceId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(sourceId)) {
+        next.delete(sourceId)
+      } else {
+        next.add(sourceId)
+      }
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === sources.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(sources.map(s => s.id)))
+    }
+  }
+
+  const isAllSelected = sources.length > 0 && selectedIds.size === sources.length
+
+  // Bulk delete handler
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return
+    setBulkDeleting(true)
+    try {
+      const result: BulkDeleteResponse = await sourcesApi.bulkDelete(Array.from(selectedIds))
+      if (result.failed_count === 0) {
+        toast.success(t.sources.bulkDeleteSuccess.replace('{count}', String(result.deleted_count)))
+      } else {
+        toast.warning(
+          t.sources.bulkDeletePartial
+            .replace('{deleted}', String(result.deleted_count))
+            .replace('{failed}', String(result.failed_count))
+        )
+      }
+      setSelectedIds(new Set())
+      setBulkDeleteDialog(false)
+      fetchSources()
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string }
+      console.error('Failed to bulk delete sources:', error)
+      toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -195,6 +243,9 @@ export default function SourcesPage() {
   const tUntitledSource = t.sources?.untitledSource ?? 'Untitled Source'
   const tYes = t.sources?.yes ?? 'Yes'
   const tNo = t.sources?.no ?? 'No'
+  const tVisibilityPrivate = t.visibility?.private ?? 'Private'
+  const tVisibilityPublic = t.visibility?.public ?? 'Public'
+  const tSourcesKgExtracted = t.sources?.kgExtracted ?? 'KG Extracted'
 
   const getSourceIcon = (source: SourceListResponse) => {
     if (source.asset?.url) return <LinkIcon className="h-4 w-4" />
@@ -218,14 +269,45 @@ export default function SourcesPage() {
     setDeleteDialog({ open: true, source })
   }, [])
 
+  const handleExtractKg = useCallback(async (e: React.MouseEvent, sourceId: string) => {
+    e.stopPropagation() // Prevent row click
+    try {
+      const result = await sourcesApi.extractKg(sourceId)
+      if (result.success) {
+        toast.success(t.sources?.kgExtractQueued || "知识图谱抽取已加入队列")
+        // Optimistic update: flip kg_extracted to true
+        setSources(prev => prev.map(s => s.id === sourceId ? { ...s, kg_extracted: true } : s))
+      }
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string }
+      toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))
+    }
+  }, [t, t.sources?.kgExtractQueued])
+
+  const handleMakePublic = async (sourceId: string) => {
+    try {
+      const updated = await sourcesApi.makePublic(sourceId)
+      setSources(prev => prev.map(s => s.id === sourceId ? { ...s, visibility: 'public' as const } : s))
+      toast.success(t.sources?.makePublicSuccess || "已设为公开")
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string }
+      console.error('Failed to make source public:', error)
+      toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))
+    }
+  }
+
   const handleDeleteConfirm = async () => {
     if (!deleteDialog.source) return
 
     try {
       await sourcesApi.delete(deleteDialog.source.id)
       toast.success(t.sources.deleteSuccess)
-      // Remove the deleted source from the list
       setSources(prev => prev.filter(s => s.id !== deleteDialog.source?.id))
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        next.delete(deleteDialog.source!.id)
+        return next
+      })
       setDeleteDialog({ open: false, source: null })
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } }, message?: string };
@@ -276,28 +358,68 @@ export default function SourcesPage() {
           </p>
         </div>
 
+        {/* Toolbar with bulk actions */}
+        <div className="flex items-center gap-2 mb-4 flex-shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={toggleSelectAll}
+          >
+            {isAllSelected ? t.sources.deselectAll : t.sources.selectAll}
+          </Button>
+          {selectedIds.size > 0 && (
+            <>
+              <span className="text-sm text-muted-foreground ml-2">
+                {t.sources.selected.replace('{count}', String(selectedIds.size))}
+              </span>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeleteDialog(true)}
+                className="ml-auto"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />
+                {t.sources.bulkDelete}
+              </Button>
+            </>
+          )}
+        </div>
+
         <div ref={scrollContainerRef} className="flex-1 rounded-md border overflow-auto">
           <table
             ref={tableRef}
             tabIndex={0}
-            className="w-full min-w-[800px] outline-none table-fixed"
+            className="w-full min-w-[1040px] outline-none table-fixed"
           >
             <colgroup>
+              <col className="w-[40px]" />
               <col className="w-[120px]" />
               <col className="w-auto" />
+              <col className="w-[90px]" />
               <col className="w-[140px]" />
-              <col className="w-[100px]" />
-              <col className="w-[100px]" />
+              <col className="w-[90px]" />
+              <col className="w-[80px]" />
+              <col className="w-[90px]" />
             </colgroup>
             <thead className="sticky top-0 bg-background z-10">
               <tr className="border-b bg-muted/50">
-                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                <th className="h-12 px-2 text-center align-middle">
+                  <Checkbox
+                    checked={isAllSelected}
+                    onCheckedChange={toggleSelectAll}
+                    aria-label={isAllSelected ? t.sources.deselectAll : t.sources.selectAll}
+                  />
+                </th>
+                <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground">
                   {t.common.type}
                 </th>
-                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground">
+                <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground">
                   {t.common.title}
                 </th>
-                <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground hidden sm:table-cell">
+                <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground">
+                  {t.visibility?.label || "可见性"}
+                </th>
+                <th className="h-12 px-2 text-left align-middle font-medium text-muted-foreground hidden sm:table-cell">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -306,7 +428,7 @@ export default function SourcesPage() {
                   >
                     {t.common.created_label}
                     <ArrowUpDown className={cn(
-                      "ml-2 h-3 w-3",
+                      "ml-1 h-3 w-3",
                       sortBy === 'created' ? 'opacity-100' : 'opacity-30'
                     )} />
                     {sortBy === 'created' && (
@@ -316,17 +438,17 @@ export default function SourcesPage() {
                     )}
                   </Button>
                 </th>
-                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden md:table-cell">
+                <th className="h-12 px-2 text-center align-middle font-medium text-muted-foreground hidden md:table-cell">
                   {t.sources.insights}
                 </th>
-                <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
+                <th className="h-12 px-2 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
                   {t.sources.embedded}
                 </th>
-                  <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
-                    {t.sources.kgExtracted || "已抽取图谱"}
-                  </th>
-                </tr>
-              </thead>
+                <th className="h-12 px-2 text-center align-middle font-medium text-muted-foreground hidden xl:table-cell">
+                  {tSourcesKgExtracted}
+                </th>
+              </tr>
+            </thead>
             <tbody>
               {sources.map((source, index) => (
                 <tr
@@ -340,15 +462,22 @@ export default function SourcesPage() {
                       : "hover:bg-muted/50"
                   )}
                 >
-                  <td className="h-12 px-4">
-                    <div className="flex items-center gap-2">
+                  <td className="h-12 px-2 text-center" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.has(source.id)}
+                      onCheckedChange={() => toggleSelect(source.id)}
+                      aria-label={`Select ${source.title || tUntitledSource}`}
+                    />
+                  </td>
+                  <td className="h-12 px-2">
+                    <div className="flex items-center gap-1">
                       {getSourceIcon(source)}
                       <Badge variant="secondary" className="text-xs">
                         {getSourceType(source)}
                       </Badge>
                     </div>
                   </td>
-                  <td className="h-12 px-4">
+                  <td className="h-12 px-2">
                     <div className="flex flex-col overflow-hidden">
                       <span className="font-medium truncate">
                         {source.title || tUntitledSource}
@@ -360,24 +489,54 @@ export default function SourcesPage() {
                       )}
                     </div>
                   </td>
-                  <td className="h-12 px-4 text-muted-foreground text-sm hidden sm:table-cell">
+                  <td className="h-12 px-2" onClick={(e) => e.stopPropagation()}>
+                    {source.visibility === 'public' ? (
+                      <Badge variant="default" className="text-xs gap-1">
+                        <Eye className="h-3 w-3" />
+                        {tVisibilityPublic}
+                      </Badge>
+                    ) : (
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation()
+                          handleMakePublic(source.id)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground cursor-pointer border-0"
+                        title={t.sources?.makePublicHint || "点击设为公开"}
+                      >
+                        <EyeOff className="h-3 w-3" />
+                        {tVisibilityPrivate}
+                      </button>
+                    )}
+                  </td>
+                  <td className="h-12 px-2 text-muted-foreground text-sm hidden sm:table-cell">
                     {formatDistanceToNow(new Date(source.created), { 
                       addSuffix: true,
                       locale: getDateLocale(language)
                     })}
                   </td>
-                  <td className="h-12 px-4 text-center hidden md:table-cell">
+                  <td className="h-12 px-2 text-center hidden md:table-cell">
                     <span className="text-sm font-medium">{source.insights_count || 0}</span>
                   </td>
-                  <td className="h-12 px-4 text-center hidden lg:table-cell">
+                  <td className="h-12 px-2 text-center hidden lg:table-cell">
                     <Badge variant={source.embedded ? "default" : "secondary"} className="text-xs">
                       {source.embedded ? tYes : tNo}
                     </Badge>
                   </td>
-                  <td className="h-12 px-4 text-center hidden lg:table-cell">
-                    <Badge variant={source.kg_extracted ? "default" : "secondary"} className="text-xs">
-                      {source.kg_extracted ? tYes : tNo}
-                    </Badge>
+                  <td className="h-12 px-2 text-center hidden xl:table-cell" onClick={(e) => e.stopPropagation()}>
+                    {source.kg_extracted ? (
+                      <Badge variant="default" className="text-xs">
+                        {tYes}
+                      </Badge>
+                    ) : (
+                      <button
+                        onClick={(e) => handleExtractKg(e, source.id)}
+                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50 cursor-pointer border-0"
+                        title={t.sources?.kgExtractHint || "点击抽取知识图谱"}
+                      >
+                        {tNo}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -415,6 +574,17 @@ export default function SourcesPage() {
         confirmText={t.common?.delete ?? 'Delete'}
         confirmVariant="destructive"
         onConfirm={handleDeleteConfirm}
+      />
+
+      <ConfirmDialog
+        open={bulkDeleteDialog}
+        onOpenChange={setBulkDeleteDialog}
+        title={t.sources?.bulkDelete ?? 'Delete Selected'}
+        description={(t.sources?.bulkDeleteConfirm ?? 'Are you sure you want to delete {count} source(s)?').replace('{count}', String(selectedIds.size))}
+        confirmText={t.common?.delete ?? 'Delete'}
+        confirmVariant="destructive"
+        onConfirm={handleBulkDelete}
+        isLoading={bulkDeleting}
       />
     </AppShell>
   )

@@ -9,6 +9,7 @@ from api.models import (
     NotebookDeleteResponse,
     NotebookResponse,
     NotebookUpdate,
+    NotebookVisibilityUpdate,
 )
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import Notebook, Source
@@ -35,16 +36,21 @@ def _notebook_to_response(nb: dict) -> NotebookResponse:
 
 
 def _check_notebook_access(nb: dict, user_id: Optional[str], require_owner: bool = False) -> bool:
-    """Check if user has access to a notebook.
-    - Public notebooks are accessible to everyone.
-    - Private notebooks require owner_id match.
-    - If user_id is None (anonymous), only public notebooks are accessible.
+    """Check notebook access.
+
+    - Read access: public notebooks or owner-only private notebooks.
+    - Write access (require_owner=True): owner only, even if public.
     """
+    owner_id = nb.get("owner_id")
+    is_owner = user_id is not None and owner_id is not None and str(owner_id) == user_id
+    if require_owner:
+        return is_owner
+
     visibility = nb.get("visibility", "private")
     if visibility == "public":
         return True
-    if require_owner or visibility == "private":
-        return user_id is not None and nb.get("owner_id") == user_id
+    if visibility == "private":
+        return is_owner
     return False
 
 
@@ -104,7 +110,7 @@ async def get_notebooks(
             ORDER BY {validated_order_by}
         """
 
-        result = await repo_query(query, {"user_id": user_id} if user_id else {})
+        result = await repo_query(query, {"user_id": ensure_record_id(user_id)} if user_id else {})
 
         # Filter by archived status if specified
         if archived is not None:
@@ -217,12 +223,20 @@ async def create_notebook(request: Request, notebook: NotebookCreate):
 @router.get(
     "/notebooks/{notebook_id}/delete-preview", response_model=NotebookDeletePreview
 )
-async def get_notebook_delete_preview(notebook_id: str):
-    """Get a preview of what will be deleted when this notebook is deleted."""
+async def get_notebook_delete_preview(request: Request, notebook_id: str):
+    """Get a preview of what will be deleted when this notebook is deleted. Requires ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
+
+        if not _check_notebook_access(
+            {"owner_id": notebook.owner_id, "visibility": notebook.visibility},
+            user_id,
+            require_owner=True,
+        ):
+            raise HTTPException(status_code=403, detail="Access denied")
 
         preview = await notebook.get_delete_preview()
 
@@ -340,6 +354,79 @@ async def update_notebook(request: Request, notebook_id: str, notebook_update: N
         logger.error(f"Error updating notebook {notebook_id}: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Error updating notebook: {str(e)}"
+        )
+
+
+@router.patch("/notebooks/{notebook_id}/visibility", response_model=NotebookResponse)
+async def update_notebook_visibility(
+    request: Request, notebook_id: str
+):
+    """Make a private notebook public. One-way only — cannot revert to private.
+
+    Requires ownership. Returns the updated notebook.
+    """
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        notebook = await Notebook.get(notebook_id)
+        if not notebook:
+            raise HTTPException(status_code=404, detail="Notebook not found")
+
+        if not _check_notebook_access(
+            {"owner_id": notebook.owner_id, "visibility": notebook.visibility},
+            user_id,
+            require_owner=True,
+        ):
+            raise HTTPException(status_code=403, detail="Access denied — you do not own this notebook")
+
+        if notebook.visibility == "public":
+            raise HTTPException(
+                status_code=400,
+                detail="Notebook is already public. Making a notebook private is not supported."
+            )
+
+        notebook.visibility = "public"
+        await notebook.save()
+
+        # Query with counts after update
+        query = """
+            SELECT *,
+            count(<-reference.in) as source_count,
+            count(<-artifact.in) as note_count
+            FROM $notebook_id
+        """
+        result = await repo_query(
+            query, {"notebook_id": ensure_record_id(notebook_id)}
+        )
+
+        if result:
+            return _notebook_to_response(result[0])
+
+        return NotebookResponse(
+            id=notebook.id or "",
+            name=notebook.name,
+            description=notebook.description,
+            archived=notebook.archived or False,
+            created=str(notebook.created),
+            updated=str(notebook.updated),
+            source_count=0,
+            note_count=0,
+            password=notebook.password,
+            creator_name=notebook.creator_name,
+            owner_id=notebook.owner_id,
+            visibility=notebook.visibility,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error updating notebook visibility {notebook_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error updating notebook visibility: {str(e)}",
         )
 
 

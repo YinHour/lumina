@@ -8,6 +8,7 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/lib/hooks/use-auth'
+import { useAuthStore } from '@/lib/stores/auth-store'
 import { useSidebarStore } from '@/lib/stores/sidebar-store'
 import { useCreateDialogs } from '@/lib/hooks/use-create-dialogs'
 import {
@@ -41,6 +42,7 @@ import {
   Plus,
   Wrench,
   Command,
+  Globe,
 } from 'lucide-react'
 
 const getNavigation = (t: TranslationKeys) => [
@@ -55,6 +57,12 @@ const getNavigation = (t: TranslationKeys) => [
     items: [
       { name: t.navigation.notebooks, href: '/notebooks', icon: Book },
       { name: t.navigation.askAndSearch, href: '/search', icon: Search },
+    ],
+  },
+  {
+    title: t.navigation.discover,
+    items: [
+      { name: t.navigation.discover, href: '/public', icon: Globe },
     ],
   },
   {
@@ -75,6 +83,8 @@ export function AppSidebar() {
   const navigation = getNavigation(t)
   const pathname = usePathname()
   const { logout } = useAuth()
+  const { username } = useAuthStore()
+  const isAdmin = username === 'admin'
   const { isCollapsed, toggleCollapse } = useSidebarStore()
   const { openSourceDialog, openNotebookDialog } = useCreateDialogs()
 
@@ -222,7 +232,12 @@ export function AppSidebar() {
             </DropdownMenu>
           </div>
 
-          {navigation.map((section, index) => (
+          {navigation.map((section, index) => {
+            // Hide management section for non-admin users
+            if (section.title === t.navigation.manage && !isAdmin) {
+              return null
+            }
+            return (
             <div key={section.title}>
               {index > 0 && (
                 <Separator className="my-3" />
@@ -271,7 +286,7 @@ export function AppSidebar() {
                 })}
               </div>
             </div>
-          ))}
+          )})}
         </nav>
 
         <div

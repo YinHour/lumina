@@ -235,6 +235,12 @@ if ! wait_for_http "http://127.0.0.1:$API_PORT/api/auth/status" "$API_STARTUP_TI
 fi
 log "✅ API backend is healthy"
 
+log "👤 Initializing admin user..."
+(
+  cd "$ROOT_DIR"
+  uv run --env-file .env python3 scripts/init-admin.py --force
+) || log "⚠️  Admin init script failed (user may already exist)"
+
 log "⚙️ Starting background worker..."
 (
   cd "$ROOT_DIR"

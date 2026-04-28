@@ -7,7 +7,9 @@ import {
   SourceResponse,
   SourceStatusResponse,
   CreateSourceRequest, 
-  UpdateSourceRequest 
+  UpdateSourceRequest,
+  BulkDeleteRequest,
+  BulkDeleteResponse,
 } from '@/lib/types/api'
 
 export const sourcesApi = {
@@ -76,8 +78,23 @@ export const sourcesApi = {
     await apiClient.delete(`/sources/${id}`)
   },
 
+  bulkDelete: async (sourceIds: string[]) => {
+    const response = await apiClient.post<BulkDeleteResponse>('/sources/bulk-delete', { source_ids: sourceIds } as BulkDeleteRequest)
+    return response.data
+  },
+
+  makePublic: async (id: string) => {
+    const response = await apiClient.patch<SourceListResponse>(`/sources/${id}/visibility`)
+    return response.data
+  },
+
   status: async (id: string) => {
     const response = await apiClient.get<SourceStatusResponse>(`/sources/${id}/status`)
+    return response.data
+  },
+
+  listPublic: async (params?: { notebook_id?: string; order_by?: string; limit?: number; offset?: number }) => {
+    const response = await apiClient.get<SourceResponse[]>('/sources/public', { params })
     return response.data
   },
 
@@ -98,6 +115,11 @@ export const sourcesApi = {
 
   retry: async (id: string) => {
     const response = await apiClient.post<SourceResponse>(`/sources/${id}/retry`)
+    return response.data
+  },
+
+  extractKg: async (id: string) => {
+    const response = await apiClient.post<{ success: boolean; source_id: string; command_id: string; message: string }>(`/sources/${id}/extract-kg`)
     return response.data
   },
 

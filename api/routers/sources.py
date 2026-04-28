@@ -20,6 +20,9 @@ from surreal_commands import execute_command_sync, submit_command
 from api.command_service import CommandService
 from api.models import (
     AssetModel,
+    BulkDeleteRequest,
+    BulkDeleteResponse,
+    BulkDeleteResult,
     CreateSourceInsightRequest,
     InsightCreationResponse,
     SourceCreate,
@@ -47,16 +50,16 @@ def _check_source_access(source_owner_id: Optional[str], source_visibility: str,
     """
     if source_visibility == "public":
         return True
-    if user_id and source_owner_id and user_id == source_owner_id:
+    if user_id and source_owner_id and str(source_owner_id) == user_id:
         return True
     return False
 
 
 def _check_source_ownership(source_owner_id: Optional[str], user_id: Optional[str]) -> bool:
     """Check if user owns a source (required for write operations)."""
-    if not user_id:
+    if not user_id or not source_owner_id:
         return False
-    return user_id == source_owner_id
+    return str(source_owner_id) == user_id
 
 
 
@@ -127,6 +130,7 @@ def parse_source_form_data(
     embed: str = Form("false"),  # Accept as string, convert to bool
     delete_source: str = Form("false"),  # Accept as string, convert to bool
     async_processing: str = Form("false"),  # Accept as string, convert to bool
+    visibility: str = Form("private"),
     file: Optional[UploadFile] = File(None),
 ) -> tuple[SourceCreate, Optional[UploadFile]]:
     """Parse form data into SourceCreate model and return upload file separately."""
@@ -171,6 +175,7 @@ def parse_source_form_data(
             embed=embed_bool,
             delete_source=delete_source_bool,
             async_processing=async_processing_bool,
+            visibility=visibility,
         )
         pass  # SourceCreate instance created successfully
     except Exception as e:
@@ -223,7 +228,7 @@ async def get_sources(
         # Visibility filter: see own (any visibility) + all public
         if user_id:
             conditions.append("(owner_id = $user_id) OR (visibility = 'public')")
-            params["user_id"] = user_id
+            params["user_id"] = ensure_record_id(user_id)
         else:
             conditions.append("visibility = 'public'")
 
@@ -545,7 +550,7 @@ async def create_source(
                 topics=[],
                 asset=source_asset,
                 owner_id=user_id,
-                visibility="private",
+                visibility=source_data.visibility,
             )
             await source.save()
 
@@ -595,6 +600,8 @@ async def create_source(
                     command_id=command_id,
                     status="new",
                     processing_info={"async": True, "queued": True},
+                    owner_id=source.owner_id,
+                    visibility=source.visibility,
                 )
 
             except Exception as e:
@@ -627,7 +634,7 @@ async def create_source(
                     title=source_data.title or "Processing...",
                     topics=[],
                     owner_id=user_id,
-                    visibility="private",
+                    visibility=source_data.visibility,
                 )
                 await source.save()
 
@@ -748,11 +755,11 @@ async def create_source(
 
 
 @router.post("/sources/json", response_model=SourceResponse)
-async def create_source_json(source_data: SourceCreate):
+async def create_source_json(request: Request, source_data: SourceCreate):
     """Create a new source using JSON payload (legacy endpoint for backward compatibility)."""
-    # Convert to form data format and call main endpoint
+    # Convert to form data format and call main endpoint while preserving request.user_id.
     form_data = (source_data, None)
-    return await create_source(form_data)
+    return await create_source(request, form_data)
 
 
 async def _resolve_source_file(source_id: str) -> tuple[str, str]:
@@ -880,6 +887,90 @@ async def check_source_file(request: Request, source_id: str):
     except Exception as e:
         logger.error(f"Error checking file for source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to verify file")
+
+
+@router.patch("/sources/{source_id}/visibility")
+async def update_source_visibility(request: Request, source_id: str):
+    """Make a private source public. One-way only — cannot revert to private.
+
+    Requires ownership. Returns the updated source.
+    """
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    try:
+        source = await Source.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+
+        if not _check_source_ownership(source.owner_id, user_id):
+            raise HTTPException(status_code=403, detail="Access denied — you do not own this source")
+
+        if source.visibility == "public":
+            raise HTTPException(
+                status_code=400,
+                detail="Source is already public. Making a source private is not supported."
+            )
+
+        source.visibility = "public"
+        await source.save()
+
+        # Re-fetch with full data (same query as get_sources)
+        result = await repo_query("""
+            SELECT id, asset, created, title, updated, topics, command, owner_id, visibility,
+            (SELECT VALUE count() FROM source_insight WHERE source = $parent.id GROUP ALL)[0].count OR 0 AS insights_count,
+            (SELECT VALUE id FROM source_embedding WHERE source = $parent.id LIMIT 1) != [] AS embedded,
+            (SELECT VALUE id FROM kg_entity WHERE source_id = type::string($parent.id) LIMIT 1) != [] AS kg_extracted
+            FROM source WHERE id = $sid
+            FETCH command
+        """, {"sid": ensure_record_id(source_id)})
+
+        if not result:
+            raise HTTPException(status_code=404, detail="Source not found after update")
+
+        row = result[0]
+        command = row.get("command")
+        command_id = None
+        status = None
+        processing_info = None
+        if command and isinstance(command, dict):
+            command_id = str(command.get("id")) if command.get("id") else None
+            status = command.get("status")
+            result_data = command.get("result")
+            execution_metadata = result_data.get("execution_metadata", {}) if isinstance(result_data, dict) else {}
+            processing_info = {
+                "started_at": execution_metadata.get("started_at"),
+                "completed_at": execution_metadata.get("completed_at"),
+                "error": command.get("error_message"),
+            }
+
+        return SourceListResponse(
+            id=row["id"],
+            title=row.get("title"),
+            topics=row.get("topics") or [],
+            asset=AssetModel(
+                file_path=row["asset"].get("file_path") if row.get("asset") else None,
+                url=row["asset"].get("url") if row.get("asset") else None,
+            ) if row.get("asset") else None,
+            embedded=row.get("embedded", False),
+            embedded_chunks=0,
+            kg_extracted=row.get("kg_extracted", False),
+            insights_count=row.get("insights_count", 0),
+            created=str(row["created"]),
+            updated=str(row["updated"]),
+            command_id=command_id,
+            status=status,
+            processing_info=processing_info,
+            owner_id=row.get("owner_id"),
+            visibility=row.get("visibility", "private"),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating visibility for source {source_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating visibility: {str(e)}")
 
 
 @router.get("/sources/{source_id}/download")
@@ -1161,7 +1252,11 @@ async def retry_source_processing(request: Request, source_id: str):
 
 @router.delete("/sources/{source_id}")
 async def delete_source(request: Request, source_id: str):
-    """Delete a source. Requires ownership."""
+    """Delete a source. Requires ownership.
+
+    Public sources that are referenced by notebooks cannot be deleted.
+    Remove the source from all notebooks first.
+    """
     user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
         source = await Source.get(source_id)
@@ -1175,11 +1270,127 @@ async def delete_source(request: Request, source_id: str):
         await source.delete()
 
         return {"message": "Source deleted successfully"}
+    except InvalidInputError as e:
+        raise HTTPException(status_code=409, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting source {source_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error deleting source: {str(e)}")
+
+
+@router.post("/sources/{source_id}/extract-kg")
+async def extract_knowledge_graph(request: Request, source_id: str):
+    """Trigger knowledge graph extraction for a source. Requires ownership."""
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
+    try:
+        source = await Source.get(source_id)
+        if not source:
+            raise HTTPException(status_code=404, detail="Source not found")
+
+        if not _check_source_ownership(source.owner_id, user_id):
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        if not source.full_text or not source.full_text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Source has no text content to extract knowledge graph from",
+            )
+
+        command_id = submit_command(
+            "open_notebook",
+            "extract_knowledge_graph",
+            {"source_id": source_id},
+        )
+
+        logger.info(
+            f"Knowledge graph extraction queued for source {source_id}: {command_id}"
+        )
+
+        return {
+            "success": True,
+            "source_id": source_id,
+            "command_id": str(command_id),
+            "message": "Knowledge graph extraction queued",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Error triggering KG extraction for source {source_id}: {str(e)}"
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Error triggering KG extraction: {str(e)}"
+        )
+
+
+@router.post("/sources/bulk-delete", response_model=BulkDeleteResponse)
+async def bulk_delete_sources(request: Request, body: BulkDeleteRequest):
+    """Delete multiple sources at once. Only deletes sources the user owns.
+
+    Public sources that are referenced by notebooks will be skipped
+    with an error in the per-source results.
+
+    Returns a per-source breakdown of which were deleted and which failed (with reasons).
+    """
+    user_id: Optional[str] = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    results: list[BulkDeleteResult] = []
+    deleted_count = 0
+    failed_count = 0
+
+    for source_id in body.source_ids:
+        try:
+            source = await Source.get(source_id)
+            if not source:
+                results.append(BulkDeleteResult(
+                    source_id=source_id, title="(not found)", deleted=False,
+                    error="Source not found"
+                ))
+                failed_count += 1
+                continue
+
+            title = source.title or "(untitled)"
+
+            if not _check_source_ownership(source.owner_id, user_id):
+                results.append(BulkDeleteResult(
+                    source_id=source_id, title=title, deleted=False,
+                    error="Access denied — you do not own this source"
+                ))
+                failed_count += 1
+                continue
+
+            await source.delete()
+            results.append(BulkDeleteResult(
+                source_id=source_id, title=title, deleted=True
+            ))
+            deleted_count += 1
+
+        except InvalidInputError as e:
+            results.append(BulkDeleteResult(
+                source_id=source_id, title=title, deleted=False,
+                error=str(e)
+            ))
+            failed_count += 1
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error in bulk delete for source {source_id}: {e}")
+            results.append(BulkDeleteResult(
+                source_id=source_id, title="(error)", deleted=False,
+                error=str(e)
+            ))
+            failed_count += 1
+
+    return BulkDeleteResponse(
+        total_requested=len(body.source_ids),
+        deleted_count=deleted_count,
+        failed_count=failed_count,
+        results=results,
+    )
 
 
 @router.get("/sources/{source_id}/insights", response_model=List[SourceInsightResponse])

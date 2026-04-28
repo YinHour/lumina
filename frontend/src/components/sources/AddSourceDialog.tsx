@@ -18,6 +18,7 @@ import { WizardContainer, WizardStep } from '@/components/ui/wizard-container'
 import { SourceTypeStep, parseAndValidateUrls } from './steps/SourceTypeStep'
 import { NotebooksStep } from './steps/NotebooksStep'
 import { ProcessingStep } from './steps/ProcessingStep'
+import { VisibilitySelector } from '@/components/notebooks/VisibilitySelector'
 import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { useTransformations } from '@/lib/hooks/use-transformations'
 import { useCreateSource } from '@/lib/hooks/use-sources'
@@ -37,6 +38,7 @@ const createSourceSchema = z.object({
   transformations: z.array(z.string()).optional(),
   embed: z.boolean(),
   async_processing: z.boolean(),
+  visibility: z.enum(['private', 'public']),
 }).refine((data) => {
   if (data.type === 'link') {
     return !!data.url && data.url.trim() !== ''
@@ -136,6 +138,7 @@ export function AddSourceDialog({
       embed: settings?.default_embedding_option === 'always' || settings?.default_embedding_option === 'ask',
       async_processing: true,
       transformations: [],
+      visibility: 'private',
     },
   })
 
@@ -157,6 +160,7 @@ export function AddSourceDialog({
         embed: embedValue,
         async_processing: true,
         transformations: [],
+        visibility: 'private',
       })
     }
   }, [settings, transformations, defaultNotebookId, reset])
@@ -308,6 +312,7 @@ export function AddSourceDialog({
       embed: data.embed,
       delete_source: false,
       async_processing: true,
+      visibility: data.visibility,
     }
 
     if (data.type === 'upload' && data.file) {
@@ -358,6 +363,7 @@ export function AddSourceDialog({
           embed: data.embed,
           delete_source: false,
           async_processing: true,
+          visibility: data.visibility,
         }
 
         if (item.type === 'file') {

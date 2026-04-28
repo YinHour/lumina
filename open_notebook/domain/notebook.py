@@ -20,7 +20,7 @@ class Notebook(ObjectModel):
     archived: Optional[bool] = False
     password: Optional[str] = None
     creator_name: Optional[str] = None
-    owner_id: Optional[str] = None
+    owner_id: Optional[Union[str, RecordID]] = None
     visibility: Literal["private", "public"] = "private"
 
     @field_validator("name")
@@ -29,6 +29,14 @@ class Notebook(ObjectModel):
         if not v.strip():
             raise InvalidInputError("Notebook name cannot be empty")
         return v
+
+    @field_validator("owner_id", mode="before")
+    @classmethod
+    def parse_owner_id(cls, value):
+        """Parse owner_id field to ensure RecordID format for SurrealDB record references."""
+        if isinstance(value, str) and value:
+            return ensure_record_id(value)
+        return value
 
     async def get_sources(self) -> List["Source"]:
         try:
@@ -172,7 +180,8 @@ class Notebook(ObjectModel):
                 {"notebook_id": notebook_id},
             )
 
-            # 2. Handle sources
+            # 2. Identify exclusive sources before unlinking (query while references exist)
+            exclusive_sources = []
             if delete_exclusive_sources:
                 # Find sources with count of references to OTHER notebooks
                 # If assigned_others = 0, source is exclusive to this notebook
@@ -189,15 +198,7 @@ class Notebook(ObjectModel):
                 for src in source_counts:
                     source_id = src.get("id")
                     if source_id and src.get("assigned_others", 0) == 0:
-                        # Exclusive source - delete it
-                        try:
-                            source = await Source.get(str(source_id))
-                            await source.delete()
-                            deleted_sources += 1
-                        except Exception as e:
-                            logger.warning(
-                                f"Failed to delete exclusive source {source_id}: {e}"
-                            )
+                        exclusive_sources.append(str(source_id))
                     else:
                         unlinked_sources += 1
             else:
@@ -208,17 +209,32 @@ class Notebook(ObjectModel):
                 )
                 unlinked_sources = source_result[0]["count"] if source_result else 0
 
-            # Delete reference relationships (unlink all sources)
+            # 3. Delete reference relationships (unlink all sources)
+            #    Must happen BEFORE deleting exclusive sources so that the
+            #    public-source-with-references constraint allows the deletion.
             await repo_query(
                 "DELETE reference WHERE out = $notebook_id",
                 {"notebook_id": notebook_id},
             )
+            logger.info(f"Unlinked {unlinked_sources} sources for notebook {self.id}")
+
+            # 4. Delete exclusive sources (now safe — references are already unlinked)
+            for source_id in exclusive_sources:
+                try:
+                    source = await Source.get(source_id)
+                    await source.delete()
+                    deleted_sources += 1
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to delete exclusive source {source_id}: {e}"
+                    )
+
             logger.info(
                 f"Unlinked {unlinked_sources} sources, deleted {deleted_sources} "
                 f"exclusive sources for notebook {self.id}"
             )
 
-            # 3. Delete the notebook record itself
+            # 5. Delete the notebook record itself
             await super().delete()
             logger.info(f"Deleted notebook {self.id}")
 
@@ -300,13 +316,21 @@ class Source(ObjectModel):
     command: Optional[Union[str, RecordID]] = Field(
         default=None, description="Link to surreal-commands processing job"
     )
-    owner_id: Optional[str] = None
+    owner_id: Optional[Union[str, RecordID]] = None
     visibility: Literal["private", "public"] = "private"
 
     @field_validator("command", mode="before")
     @classmethod
     def parse_command(cls, value):
         """Parse command field to ensure RecordID format"""
+        if isinstance(value, str) and value:
+            return ensure_record_id(value)
+        return value
+
+    @field_validator("owner_id", mode="before")
+    @classmethod
+    def parse_owner_id(cls, value):
+        """Parse owner_id field to ensure RecordID format for SurrealDB record references."""
         if isinstance(value, str) and value:
             return ensure_record_id(value)
         return value
@@ -546,7 +570,36 @@ class Source(ObjectModel):
         return data
 
     async def delete(self) -> bool:
-        """Delete source and clean up associated file, embeddings, and insights."""
+        """Delete source and clean up associated file, embeddings, and insights.
+
+        Raises:
+            InvalidInputError: If the source is public and has active references
+                (referenced by notebooks). Public sources with references cannot
+                be deleted until all referencing notebooks unlink them.
+        """
+        # Prevent deletion of public sources that are referenced by notebooks
+        if self.visibility == "public":
+            try:
+                refs = await repo_query(
+                    "SELECT VALUE out FROM reference WHERE in = $source_id",
+                    {"source_id": ensure_record_id(self.id)},
+                )
+                if refs and len(refs) > 0:
+                    notebook_ids = [str(r) for r in refs]
+                    raise InvalidInputError(
+                        f"Cannot delete public source '{self.title or self.id}': "
+                        f"it is referenced by {len(notebook_ids)} notebook(s). "
+                        "Remove the source from all notebooks first, or ask notebook "
+                        "owners to unlink it."
+                    )
+            except InvalidInputError:
+                raise
+            except Exception as e:
+                logger.warning(
+                    f"Failed to check references for source {self.id}: {e}. "
+                    "Proceeding with deletion."
+                )
+
         # Clean up uploaded file if it exists
         if self.asset and self.asset.file_path:
             file_path = Path(self.asset.file_path)
@@ -591,6 +644,19 @@ class Source(ObjectModel):
         except Exception as e:
             logger.warning(
                 f"Failed to delete associated data for source {self.id}: {e}. "
+                "Continuing with source deletion."
+            )
+
+        # Clean up reference edges (unlink from all notebooks)
+        try:
+            await repo_query(
+                "DELETE reference WHERE in = $source_id",
+                {"source_id": ensure_record_id(self.id)},
+            )
+            logger.debug(f"Deleted reference edges for source {self.id}")
+        except Exception as e:
+            logger.warning(
+                f"Failed to clean up reference edges for source {self.id}: {e}. "
                 "Continuing with source deletion."
             )
 

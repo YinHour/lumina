@@ -9,6 +9,15 @@ class NotebookCreate(BaseModel):
     description: str = Field(default="", description="Description of the notebook")
     password: Optional[str] = Field(None, description="Notebook access password")
     creator_name: Optional[str] = Field(None, description="Name of the notebook creator")
+    visibility: Literal["private", "public"] = Field(
+        "private", description="Visibility: private or public"
+    )
+
+
+class NotebookVisibilityUpdate(BaseModel):
+    visibility: Literal["private", "public"] = Field(
+        ..., description="New visibility setting"
+    )
 
 
 class NotebookUpdate(BaseModel):
@@ -19,6 +28,9 @@ class NotebookUpdate(BaseModel):
     )
     password: Optional[str] = Field(None, description="Notebook access password")
     creator_name: Optional[str] = Field(None, description="Name of the notebook creator")
+    visibility: Optional[Literal["private", "public"]] = Field(
+        None, description="Visibility: private or public"
+    )
 
 
 class NotebookResponse(BaseModel):
@@ -32,6 +44,16 @@ class NotebookResponse(BaseModel):
     note_count: int
     password: Optional[str] = None
     creator_name: Optional[str] = None
+    owner_id: Optional[str] = None
+    visibility: Literal["private", "public"] = "private"
+
+    @field_validator("owner_id", mode="before")
+    @classmethod
+    def coerce_owner_id(cls, v):
+        """Convert RecordID to string so Pydantic validation passes."""
+        if v is not None:
+            return str(v)
+        return v
 
 
 # Search models
@@ -314,6 +336,9 @@ class SourceCreate(BaseModel):
     async_processing: bool = Field(
         False, description="Whether to process source asynchronously"
     )
+    visibility: Literal["private", "public"] = Field(
+        "private", description="Visibility: private or public"
+    )
 
     @model_validator(mode="after")
     def validate_notebook_fields(self):
@@ -338,6 +363,9 @@ class SourceCreate(BaseModel):
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
     topics: Optional[List[str]] = Field(None, description="Source topics")
+    visibility: Optional[Literal["private", "public"]] = Field(
+        None, description="Visibility: private or public"
+    )
 
 
 class SourceResponse(BaseModel):
@@ -358,6 +386,16 @@ class SourceResponse(BaseModel):
     processing_info: Optional[Dict] = None
     # Notebook associations
     notebooks: Optional[List[str]] = None
+    owner_id: Optional[str] = None
+    visibility: Literal["private", "public"] = "private"
+
+    @field_validator("owner_id", mode="before")
+    @classmethod
+    def coerce_owner_id(cls, v):
+        """Convert RecordID to string so Pydantic validation passes."""
+        if v is not None:
+            return str(v)
+        return v
 
 
 class SourceListResponse(BaseModel):
@@ -376,6 +414,16 @@ class SourceListResponse(BaseModel):
     command_id: Optional[str] = None
     status: Optional[str] = None
     processing_info: Optional[Dict[str, Any]] = None
+    owner_id: Optional[str] = None
+    visibility: Literal["private", "public"] = "private"
+
+    @field_validator("owner_id", mode="before")
+    @classmethod
+    def coerce_owner_id(cls, v):
+        """Convert RecordID to string so Pydantic validation passes."""
+        if v is not None:
+            return str(v)
+        return v
 
 
 # Context API models
@@ -443,6 +491,31 @@ class SourceStatusResponse(BaseModel):
         None, description="Detailed processing information"
     )
     command_id: Optional[str] = Field(None, description="Command ID if available")
+
+
+# Bulk Delete models
+class BulkDeleteRequest(BaseModel):
+    """Request to delete multiple sources at once."""
+
+    source_ids: List[str] = Field(..., min_length=1, max_length=100, description="List of source IDs to delete")
+
+
+class BulkDeleteResult(BaseModel):
+    """Result for a single source in a bulk delete operation."""
+
+    source_id: str
+    title: str
+    deleted: bool
+    error: Optional[str] = None
+
+
+class BulkDeleteResponse(BaseModel):
+    """Response for bulk delete operation."""
+
+    total_requested: int
+    deleted_count: int
+    failed_count: int
+    results: List[BulkDeleteResult]
 
 
 # Error response

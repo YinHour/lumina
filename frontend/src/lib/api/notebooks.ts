@@ -51,4 +51,14 @@ export const notebooksApi = {
     const response = await apiClient.delete(`/notebooks/${notebookId}/sources/${sourceId}`)
     return response.data
   },
+
+  listPublic: async (params?: { archived?: boolean; order_by?: string; limit?: number; offset?: number }) => {
+    const response = await apiClient.get<NotebookResponse[]>('/notebooks/public', { params })
+    return response.data
+  },
+
+  updateVisibility: async (id: string, _visibility?: 'private' | 'public') => {
+    const response = await apiClient.patch<NotebookResponse>(`/notebooks/${id}/visibility`)
+    return response.data
+  },
 }

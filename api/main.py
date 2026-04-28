@@ -14,6 +14,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from open_notebook.utils.logger_config import setup_logging
 setup_logging()
 
+# Monkey-patch ChatOpenAI to preserve DeepSeek reasoning_content across turns
+import api.deepseek_reasoning_patch  # noqa: E402
+api.deepseek_reasoning_patch.apply()
+
 from api.auth import PasswordAuthMiddleware
 from open_notebook.exceptions import (
     AuthenticationError,
@@ -137,6 +141,8 @@ app.add_middleware(
         "/redoc",
         "/api/auth/status",
         "/api/config",
+        "/api/notebooks/public",
+        "/api/sources/public",
     ],
 )
 

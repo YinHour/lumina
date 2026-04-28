@@ -5,7 +5,7 @@ import { NotebookResponse } from '@/lib/types/api'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FileText, StickyNote, Lock, User } from 'lucide-react'
+import { MoreHorizontal, Archive, ArchiveRestore, Trash2, FileText, StickyNote, Lock, User, Eye, EyeOff } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import {
   DropdownMenu,
@@ -18,6 +18,10 @@ import { NotebookDeleteDialog } from './NotebookDeleteDialog'
 import { useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { getDateLocale } from '@/lib/utils/date-locale'
+import { notebooksApi } from '@/lib/api/notebooks'
+import { toast } from 'sonner'
+import { getApiErrorKey } from '@/lib/utils/error-handler'
+
 interface NotebookCardProps {
   notebook: NotebookResponse
 }
@@ -25,8 +29,12 @@ interface NotebookCardProps {
 export function NotebookCard({ notebook }: NotebookCardProps) {
   const { t, language } = useTranslation()
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+  const [visibility, setVisibility] = useState(notebook.visibility)
   const router = useRouter()
   const updateNotebook = useUpdateNotebook()
+
+  const tVisibilityPrivate = t.visibility?.private ?? 'Private'
+  const tVisibilityPublic = t.visibility?.public ?? 'Public'
 
   const handleArchiveToggle = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -34,6 +42,18 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
       id: notebook.id,
       data: { archived: !notebook.archived }
     })
+  }
+
+  const handleMakePublic = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await notebooksApi.updateVisibility(notebook.id)
+      setVisibility('public')
+      toast.success(t.sources?.makePublicSuccess || t.notebooks?.makePublicSuccess || "已设为公开")
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { detail?: string } }, message?: string }
+      toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))
+    }
   }
 
   const handleCardClick = () => {
@@ -55,49 +75,67 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
                   {notebook.name}
                 </CardTitle>
                 {notebook.archived && (
-                  <Badge variant="secondary" className="mt-1">
+                  <Badge variant="secondary" className="mt-1 shrink-0">
                     {t.notebooks.archived}
                   </Badge>
                 )}
               </div>
               
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => e.stopPropagation()}
+              <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                {/* Visibility badge */}
+                {visibility === 'public' ? (
+                  <Badge variant="default" className="text-xs gap-1">
+                    <Eye className="h-3 w-3" />
+                    {tVisibilityPublic}
+                  </Badge>
+                ) : (
+                  <button
+                    onClick={handleMakePublic}
+                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors bg-secondary text-secondary-foreground hover:bg-primary hover:text-primary-foreground cursor-pointer border-0"
+                    title={t.sources?.makePublicHint || "点击设为公开"}
                   >
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenuItem onClick={handleArchiveToggle}>
-                    {notebook.archived ? (
-                      <>
-                        <ArchiveRestore className="h-4 w-4 mr-2" />
-                        {t.notebooks.unarchive}
-                      </>
-                    ) : (
-                      <>
-                        <Archive className="h-4 w-4 mr-2" />
-                        {t.notebooks.archive}
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowDeleteDialog(true)
-                    }}
-                    className="text-red-600"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {t.common.delete}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    <EyeOff className="h-3 w-3" />
+                    {tVisibilityPrivate}
+                  </button>
+                )}
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleArchiveToggle}>
+                      {notebook.archived ? (
+                        <>
+                          <ArchiveRestore className="h-4 w-4 mr-2" />
+                          {t.notebooks.unarchive}
+                        </>
+                      ) : (
+                        <>
+                          <Archive className="h-4 w-4 mr-2" />
+                          {t.notebooks.archive}
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowDeleteDialog(true)
+                      }}
+                      className="text-red-600"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {t.common.delete}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           </CardHeader>
           

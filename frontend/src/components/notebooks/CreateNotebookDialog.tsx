@@ -19,12 +19,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { useCreateNotebook } from '@/lib/hooks/use-notebooks'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { VisibilitySelector } from './VisibilitySelector'
 
 const createNotebookSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   description: z.string().optional(),
-  password: z.string().optional(),
-  creator_name: z.string().optional(),
+  visibility: z.enum(['private', 'public']),
 })
 
 type CreateNotebookFormData = z.infer<typeof createNotebookSchema>
@@ -40,6 +40,8 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isValid },
     reset,
   } = useForm<CreateNotebookFormData>({
@@ -48,10 +50,11 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
     defaultValues: {
       name: '',
       description: '',
-      password: '',
-      creator_name: '',
+      visibility: 'private',
     },
   })
+
+  const visibility = watch('visibility')
 
   const closeDialog = () => onOpenChange(false)
 
@@ -101,26 +104,10 @@ export function CreateNotebookDialog({ open, onOpenChange }: CreateNotebookDialo
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="notebook-password">Password (Optional)</Label>
-            <Input
-              id="notebook-password"
-              type="password"
-              {...register('password')}
-              placeholder="Leave blank for no password"
-              autoComplete="new-password"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="notebook-creator">Creator Name (Optional)</Label>
-            <Input
-              id="notebook-creator"
-              {...register('creator_name')}
-              placeholder="Your name"
-              autoComplete="off"
-            />
-          </div>
+          <VisibilitySelector
+            value={visibility}
+            onChange={(v) => setValue('visibility', v, { shouldValidate: true })}
+          />
 
           <DialogFooter className="gap-2 sm:gap-0">
             <Button type="button" variant="outline" onClick={closeDialog}>

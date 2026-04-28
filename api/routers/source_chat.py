@@ -167,9 +167,13 @@ async def get_source_chat_sessions(source_id: str = Path(..., description="Sourc
                 if session_result and len(session_result) > 0:
                     session_data = session_result[0]
 
-                    # Get message count from LangGraph state
+                    # Get message count from LangGraph state (use checkpoint file
+                    # so we read the same sqlite file the streaming endpoint writes to)
                     msg_count = await get_session_message_count(
-                        source_chat_graph, session_id
+                        source_chat_graph,
+                        session_id,
+                        checkpoint_file=LANGGRAPH_SOURCE_CHAT_CHECKPOINT_FILE,
+                        state_graph=source_chat_state,
                     )
 
                     sessions.append(
@@ -238,12 +242,17 @@ async def get_source_chat_session(
                 status_code=404, detail="Session not found for this source"
             )
 
-        # Get session state from LangGraph to retrieve messages
-        # Use sync get_state() in a thread since SqliteSaver doesn't support async
-        thread_state = await asyncio.to_thread(
-            source_chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": full_session_id}),
-        )
+        # Get session state from LangGraph using SqliteSaver (NOT the module-level
+        # MemorySaver graph) so we read from the same checkpoint file that the
+        # streaming endpoint writes to.
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        with SqliteSaver.from_conn_string(LANGGRAPH_SOURCE_CHAT_CHECKPOINT_FILE) as saver:
+            temp_graph = source_chat_state.compile(checkpointer=saver)
+            thread_state = await asyncio.to_thread(
+                temp_graph.get_state,
+                config=RunnableConfig(configurable={"thread_id": full_session_id}),
+            )
 
         # Extract messages from state
         messages: list[ChatMessage] = []
@@ -348,8 +357,14 @@ async def update_source_chat_session(
 
         await session.save()
 
-        # Get message count from LangGraph state
-        msg_count = await get_session_message_count(source_chat_graph, full_session_id)
+        # Get message count from LangGraph state (use checkpoint file
+        # so we read the same sqlite file the streaming endpoint writes to)
+        msg_count = await get_session_message_count(
+            source_chat_graph,
+            full_session_id,
+            checkpoint_file=LANGGRAPH_SOURCE_CHAT_CHECKPOINT_FILE,
+            state_graph=source_chat_state,
+        )
 
         return SourceChatSessionResponse(
             id=session.id or "",
@@ -429,12 +444,15 @@ async def stream_source_chat_response(
 ) -> AsyncGenerator[str, None]:
     """Stream the source chat response as Server-Sent Events."""
     try:
-        # Get current state
-        # Use sync get_state() in a thread since SqliteSaver doesn't support async
-        current_state = await asyncio.to_thread(
-            source_chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": session_id}),
-        )
+        # Get current state from SqliteSaver (same file the streaming writes to)
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        with SqliteSaver.from_conn_string(LANGGRAPH_SOURCE_CHAT_CHECKPOINT_FILE) as saver:
+            temp_graph = source_chat_state.compile(checkpointer=saver)
+            current_state = await asyncio.to_thread(
+                temp_graph.get_state,
+                config=RunnableConfig(configurable={"thread_id": session_id}),
+            )
 
         # Prepare state for execution
         state_values = current_state.values if current_state else {}

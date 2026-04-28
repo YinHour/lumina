@@ -29,6 +29,7 @@ T = TypeVar("T", bound="ObjectModel")
 
 
 class ObjectModel(BaseModel):
+    model_config = ConfigDict(validate_assignment=True)
     id: Optional[str] = None
     table_name: ClassVar[str] = ""
     nullable_fields: ClassVar[set[str]] = set()  # Fields that can be saved as None

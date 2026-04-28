@@ -1,10 +1,11 @@
 "use client"
 
-import { Control, Controller } from "react-hook-form"
+import { Control, Controller, useWatch } from "react-hook-form"
 import { useTranslation } from "@/lib/hooks/use-translation"
 import { FormSection } from "@/components/ui/form-section"
 import { CheckboxList } from "@/components/ui/checkbox-list"
 import { Checkbox } from "@/components/ui/checkbox"
+import { VisibilitySelector } from "@/components/notebooks/VisibilitySelector"
 import { Transformation } from "@/lib/types/transformations"
 import { SettingsResponse } from "@/lib/types/api"
 
@@ -18,6 +19,7 @@ interface CreateSourceFormData {
   transformations?: string[]
   embed: boolean
   async_processing: boolean
+  visibility: 'private' | 'public'
 }
 
 interface ProcessingStepProps {
@@ -44,8 +46,28 @@ export function ProcessingStep({
     description: transformation.description
   }))
 
+  // Watch visibility from form
+  const visibility = useWatch({ control, name: 'visibility' }) as 'private' | 'public'
+
   return (
     <div className="space-y-8">
+      {/* Visibility selector */}
+      <FormSection
+        title={t.visibility?.title || 'Visibility'}
+        description={t.visibility?.description || 'Control who can see this source'}
+      >
+        <Controller
+          control={control}
+          name="visibility"
+          render={({ field }) => (
+            <VisibilitySelector
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        />
+      </FormSection>
+
       <FormSection
         title={`${t.navigation.transformations} (${t.common.optional})`}
         description={t.sources.processDescription}

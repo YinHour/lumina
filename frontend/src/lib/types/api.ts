@@ -59,6 +59,24 @@ export interface SourceStatusResponse {
   command_id?: string
 }
 
+export interface BulkDeleteRequest {
+  source_ids: string[]
+}
+
+export interface BulkDeleteResult {
+  source_id: string
+  title: string
+  deleted: boolean
+  error?: string | null
+}
+
+export interface BulkDeleteResponse {
+  total_requested: number
+  deleted_count: number
+  failed_count: number
+  results: BulkDeleteResult[]
+}
+
 export interface SettingsResponse {
   default_content_processing_engine_doc?: string
   default_content_processing_engine_url?: string
@@ -72,8 +90,6 @@ export interface SettingsResponse {
 export interface CreateNotebookRequest {
   name: string
   description?: string
-  password?: string
-  creator_name?: string
   visibility?: 'private' | 'public'
 }
 
@@ -124,6 +140,8 @@ export interface CreateSourceRequest {
   delete_source?: boolean
   // New async processing support
   async_processing?: boolean
+  // Visibility
+  visibility?: 'private' | 'public'
 }
 
 export interface UpdateNoteRequest {

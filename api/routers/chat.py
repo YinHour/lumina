@@ -12,8 +12,9 @@ from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
     NotFoundError,
 )
-from open_notebook.graphs.chat import graph as chat_graph
+from open_notebook.graphs.chat import agent_state, graph as chat_graph
 from open_notebook.utils.graph_utils import get_session_message_count
+from open_notebook.config import LANGGRAPH_CHAT_CHECKPOINT_FILE
 
 router = APIRouter()
 
@@ -112,8 +113,14 @@ async def get_sessions(notebook_id: str = Query(..., description="Notebook ID"))
         for session in sessions_list:
             session_id = str(session.id)
 
-            # Get message count from LangGraph state
-            msg_count = await get_session_message_count(chat_graph, session_id)
+            # Get message count from LangGraph state (use checkpoint file
+            # so we read the same sqlite file the streaming endpoint writes to)
+            msg_count = await get_session_message_count(
+                chat_graph,
+                session_id,
+                checkpoint_file=LANGGRAPH_CHAT_CHECKPOINT_FILE,
+                state_graph=agent_state,
+            )
 
             results.append(
                 ChatSessionResponse(
@@ -192,12 +199,20 @@ async def get_session(session_id: str):
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Get session state from LangGraph to retrieve messages
-        # Use sync get_state() in a thread since SqliteSaver doesn't support async
-        thread_state = await asyncio.to_thread(
-            chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": full_session_id}),
-        )
+        # Get session state from LangGraph using SqliteSaver (NOT the module-level
+        # MemorySaver graph) so we read from the same checkpoint file that the
+        # streaming endpoint writes to.
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        from open_notebook.config import LANGGRAPH_CHAT_CHECKPOINT_FILE
+        from open_notebook.graphs.chat import agent_state
+
+        with SqliteSaver.from_conn_string(LANGGRAPH_CHAT_CHECKPOINT_FILE) as saver:
+            temp_graph = agent_state.compile(checkpointer=saver)
+            thread_state = await asyncio.to_thread(
+                temp_graph.get_state,
+                config=RunnableConfig(configurable={"thread_id": full_session_id}),
+            )
 
         # Extract messages from state
         messages: list[ChatMessage] = []
@@ -293,8 +308,14 @@ async def update_session(session_id: str, request: UpdateSessionRequest):
         )
         notebook_id = notebook_query[0]["out"] if notebook_query else None
 
-        # Get message count from LangGraph state
-        msg_count = await get_session_message_count(chat_graph, full_session_id)
+        # Get message count from LangGraph state (use checkpoint file
+        # so we read the same sqlite file the streaming endpoint writes to)
+        msg_count = await get_session_message_count(
+            chat_graph,
+            full_session_id,
+            checkpoint_file=LANGGRAPH_CHAT_CHECKPOINT_FILE,
+            state_graph=agent_state,
+        )
 
         return ChatSessionResponse(
             id=session.id or "",
@@ -347,11 +368,15 @@ async def stream_chat_response(
     from open_notebook.graphs.chat import agent_state
     
     try:
-        # Get current state via sync thread
-        current_state = await asyncio.to_thread(
-            chat_graph.get_state,
-            config=RunnableConfig(configurable={"thread_id": session_id}),
-        )
+        # Get current state from SqliteSaver (same file the streaming writes to)
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        with SqliteSaver.from_conn_string(LANGGRAPH_CHAT_CHECKPOINT_FILE) as saver:
+            temp_graph = agent_state.compile(checkpointer=saver)
+            current_state = await asyncio.to_thread(
+                temp_graph.get_state,
+                config=RunnableConfig(configurable={"thread_id": session_id}),
+            )
 
         state_values = current_state.values if current_state else {}
         state_values["messages"] = state_values.get("messages", [])

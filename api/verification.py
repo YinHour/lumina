@@ -78,7 +78,7 @@ async def _mark_code_used(code_record_id: str) -> None:
 async def _increment_code_attempts(code_record_id: str) -> None:
     """Increment failed verification attempts for a code record."""
     await repo_query(
-        f"UPDATE {code_record_id} SET attempts = math::min((attempts ?? 0) + 1, {MAX_VERIFICATION_ATTEMPTS})"
+        f"UPDATE {code_record_id} SET attempts = math::min([(attempts ?? 0) + 1, {MAX_VERIFICATION_ATTEMPTS}])"
     )
 
 
