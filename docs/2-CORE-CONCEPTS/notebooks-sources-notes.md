@@ -204,20 +204,37 @@ YOU
 
 ## Key Design Decisions
 
-### 1. One Notebook Per Source
+### 1. One Notebook Per Source (Ownership)
 
-Each source belongs to exactly one notebook. This creates clear boundaries:
-- No ambiguity about which research project a source is in
-- Easy to isolate or export a complete project
-- Clean permissions model (if someone gets access to notebook, they get access to all its sources)
+Each source has exactly one **owner** (the user who uploaded it) and an **owning notebook** (the notebook it was originally added to). However, sources can now be **shared** across notebooks via references:
+- A source can be added to multiple notebooks (it appears in each notebook's context)
+- The original owns it, but other notebooks can reference and use it
+- Deleting a source from a notebook only removes the reference — the source still exists in its owning notebook
 
-### 2. Immutable Sources, Mutable Notes
+### 2. Public / Private Visibility
+
+Notebooks and sources have a **visibility** setting: `private` (default) or `public`.
+
+**One-way toggle:** Visibility can only change from `private` → `public`. Once public, it cannot be made private again. This prevents accidental exposure and ensures public content stays public.
+
+**Summary:**
+
+| Visibility | Who Can See It |
+|-----------|----------------|
+| `private` | Only the owner |
+| `public`  | Everyone (with or without login) |
+
+**Public content** is browsable on a dedicated public page. Unauthenticated users can view public notebooks, sources, and their associated content.
+
+**Deletion constraint:** A public source that is referenced by notebooks **cannot** be deleted until all notebooks unlink it. This prevents breaking public-facing content that others may rely on. Attempting to delete a referenced public source returns a 409 Conflict.
+
+### 3. Immutable Sources, Mutable Notes
 
 Sources never change (once added, always the same). But notes can be edited or deleted. Why?
 - Sources are evidence → evidence shouldn't be altered
 - Notes are your thinking → thinking evolves as you learn
 
-### 3. Explicit Context Control
+### 4. Explicit Context Control
 
 Sources don't automatically go to AI. You decide which sources are "in context" for each interaction:
 - Chat: You manually select which sources to include
@@ -256,10 +273,10 @@ Think of notes like your case brief:
 ## Common Questions
 
 ### Can I move a source to a different notebook?
-Not directly. Each source is tied to one notebook. If you want it in multiple notebooks, add it again (uploads are fast if it's already processed).
+You can **add** a source to multiple notebooks via references. The source keeps its owning notebook, but all notebooks it's added to can use it. To stop using it in a notebook, simply remove the reference.
 
 ### Can a note reference sources from a different notebook?
-No. Notes stay within their notebook and reference sources within that notebook. This keeps boundaries clean.
+Yes, if the source is shared into the notebook. Notes can reference any source that is linked (via reference) to their notebook.
 
 ### What if I want to group sources within a notebook?
 Use tags. You can tag sources ("primary research," "background," "methodology") and filter by tags.
@@ -267,18 +284,25 @@ Use tags. You can tag sources ("primary research," "background," "methodology") 
 ### Can I merge two notebooks?
 Not built-in, but you can manually copy sources from one notebook to another by re-uploading them.
 
+### Can anyone see my content?
+Only if you explicitly make it public. By default, all notebooks and sources are **private** — only you can see them. Making content public is a deliberate, one-way action.
+
+### Can I delete a public source?
+Only if it's not referenced by any notebook. If notebooks are still using the source, you must first remove it from those notebooks (or ask the notebook owners to do so). This protects content that others may depend on.
+
 ---
 
 ## Summary
 
-| Concept | Purpose | Lifecycle | Scope |
-|---------|---------|-----------|-------|
-| **Notebook** | Container + context | Create once, configure | All its sources + notes |
-| **Source** | Raw material | Add → Process → Store | One notebook |
-| **Note** | Processed output | Create/capture → Edit → Share | One notebook |
+| Concept | Purpose | Lifecycle | Scope | Visibility |
+|---------|---------|-----------|-------|------------|
+| **Notebook** | Container + context | Create once, configure | All its sources + notes | private (default) or public |
+| **Source** | Raw material | Add → Process → Store → Share | Owning notebook + referenced notebooks | private (default) or public |
+| **Note** | Processed output | Create/capture → Edit → Share | One notebook | Inherits notebook visibility |
 
 This three-layer model gives you:
 - **Clear organization** (everything scoped to projects)
-- **Privacy control** (isolated notebooks)
+- **Privacy control** (private by default, explicit public sharing)
 - **Audit trails** (notes cite sources)
 - **Flexibility** (notes can be manual or AI-generated)
+- **Safe sharing** (public content is protected from accidental deletion)

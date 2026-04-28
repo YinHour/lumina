@@ -1,5 +1,20 @@
 # Lumina 公开/私密 Sources & Notebooks 实现计划
 
+> **Status: ✅ Implemented** — 2026-04-27, branch `feature/public-private-content`
+>
+> All phases completed. Additional work beyond this plan:
+> - Source deletion constraint: public sources with active references cannot be deleted (409 Conflict)
+> - Notebook.delete() reorder: unlink references before deleting exclusive sources
+> - `PATCH /sources/{id}/visibility` endpoint (one-way toggle)
+> - `POST /sources/bulk-delete` endpoint with per-source constraint checking
+> - Frontend public browse page, visibility selector component, i18n keys
+> - `init-admin.py` admin user creation script
+>
+> **Relevant docs:**
+> - [Core Concepts: Visibility](../2-CORE-CONCEPTS/notebooks-sources-notes.md#2-public--private-visibility)
+> - [API Reference: Visibility API](../7-DEVELOPMENT/api-reference.md#visibility-api)
+> - [API Reference: Public Browsing](../7-DEVELOPMENT/api-reference.md#public-browsing-api)
+
 > **For Hermes:** Use subagent-driven-development skill to implement this plan task-by-task.
 
 **Goal:** 为 Source 和 Notebook 添加 owner_id + visibility 字段，实现公开/私密内容隔离，新增 Public 浏览页面。

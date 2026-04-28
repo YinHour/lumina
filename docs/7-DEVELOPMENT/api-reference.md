@@ -52,10 +52,14 @@ Instead of memorizing endpoints, use the interactive API docs:
 **Notebooks** - Research projects containing sources and notes
 - `GET/POST /notebooks` - List and create
 - `GET/PUT/DELETE /notebooks/{id}` - Read, update, delete
+- `PATCH /notebooks/{id}/visibility` - Make notebook public (one-way)
 
 **Sources** - Content items (PDFs, URLs, text)
 - `GET/POST /sources` - List and add content
 - `GET /sources/{id}` - Fetch source details
+- `DELETE /sources/{id}` - Delete source (public + referenced → 409)
+- `POST /sources/bulk-delete` - Delete multiple sources at once
+- `PATCH /sources/{id}/visibility` - Make source public (one-way)
 - `POST /sources/{id}/retry` - Retry failed processing
 - `GET /sources/{id}/download` - Download original file
 
@@ -94,6 +98,10 @@ Instead of memorizing endpoints, use the interactive API docs:
 **Health & Status**
 - `GET /health` - Health check
 - `GET /commands/{id}` - Track async operations
+
+**Public Browsing** (no auth required)
+- `GET /api/public/notebooks` - List all public notebooks
+- `GET /api/public/sources` - List all public sources
 
 ---
 
@@ -206,10 +214,108 @@ All errors return JSON with status code:
 | Code | Meaning | Example |
 |------|---------|---------|
 | 200 | Success | Operation completed |
-| 400 | Bad Request | Invalid input |
+| 400 | Bad Request | Invalid input / already public |
 | 404 | Not Found | Resource doesn't exist |
-| 409 | Conflict | Resource already exists |
+| 409 | Conflict | Cannot delete public source with active references |
 | 500 | Server Error | Database/processing error |
+
+---
+
+## Visibility API
+
+Control whether notebooks and sources are private (default) or publicly accessible.
+
+### Make a Notebook Public
+
+Visibility can only change from `private` → `public`. This is irreversible.
+
+```bash
+curl -X PATCH http://localhost:5055/api/notebooks/notebook:abc/visibility \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Response: `200 OK` — returns the updated notebook.
+
+Errors:
+- `400 Bad Request` — Notebook is already public
+- `403 Forbidden` — You don't own this notebook
+- `404 Not Found` — Notebook doesn't exist
+
+### Make a Source Public
+
+Same one-way toggle as notebooks.
+
+```bash
+curl -X PATCH http://localhost:5055/api/sources/source:xyz/visibility \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Errors:
+- `400 Bad Request` — Source is already public
+- `403 Forbidden` — You don't own this source
+- `404 Not Found` — Source doesn't exist
+
+### Source Deletion Constraint
+
+A public source that is referenced by notebooks **cannot** be deleted:
+
+```bash
+curl -X DELETE http://localhost:5055/api/sources/source:xyz \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+| Scenario | Response |
+|----------|----------|
+| Private source | `200 OK` — Deleted |
+| Public source, 0 references | `200 OK` — Deleted |
+| Public source, N references | `409 Conflict` — "Cannot delete public source: it is referenced by N notebook(s)" |
+
+To delete a referenced public source, first remove it from all referencing notebooks using `DELETE /api/notebooks/{notebook_id}/sources/{source_id}`.
+
+### Bulk Delete Sources
+
+```bash
+curl -X POST http://localhost:5055/api/sources/bulk-delete \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"source_ids": ["source:abc", "source:xyz"]}'
+```
+
+Returns per-source results. Public sources with references are skipped with an error message in the results array.
+
+---
+
+## Public Browsing API
+
+No authentication required. Public endpoints let anyone browse publicly shared content.
+
+### List Public Notebooks
+
+```bash
+curl http://localhost:5055/api/public/notebooks?limit=20&offset=0
+```
+
+Returns notebooks with `visibility = 'public'`, including owner username, source count, and note count.
+
+### List Public Sources
+
+```bash
+curl http://localhost:5055/api/public/sources?limit=20&offset=0
+```
+
+Returns sources with `visibility = 'public'`, including owner info and processing status.
+
+### Accessing Public Content
+
+Public notebooks/sources can also be fetched directly by ID without authentication if they're public:
+
+```bash
+# Works without auth for public content
+curl http://localhost:5055/api/notebooks/notebook:abc
+curl http://localhost:5055/api/sources/source:xyz
+
+# Returns 404 for private content (same as "not found" to avoid leaking existence)
+```
 
 ---
 
