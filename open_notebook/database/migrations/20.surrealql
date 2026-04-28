@@ -1,1 +1,0 @@
-DEFINE FIELD IF NOT EXISTS origin_notebook_id ON TABLE source TYPE option<string>;

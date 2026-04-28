@@ -1,1 +1,0 @@
-REMOVE FIELD IF EXISTS origin_notebook_id ON TABLE source;
