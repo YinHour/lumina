@@ -5,37 +5,24 @@ Provides endpoints for username/password login, password change, and first-time 
 Uses bcrypt for password hashing and JWT for session tokens.
 """
 
-from datetime import datetime, timezone
+import os
+import time
 from typing import Any, Dict, List, Optional
 
+import jwt
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
-from api.auth import invalidate_has_users_cache
-from api.jwt_auth import create_jwt_token, find_user_by_username, validate_jwt_token
 from api.models import (
     AuthStatusResponse,
     ChangePasswordRequest,
     ChangePasswordResponse,
     LoginRequest,
     LoginResponse,
-    RegisterRequest,
-    RegisterResponse,
-    ResetPasswordRequest,
-    ResetPasswordResponse,
-    SendCodeRequest,
-    SendCodeResponse,
     SetupRequest,
     UserResponse,
 )
 from api.password_utils import hash_password, verify_password
-from api.verification import (
-    ALLOW_PUBLIC_REGISTRATION,
-    CODE_TTL_SECONDS,
-    check_user_exists,
-    send_code,
-    verify_code,
-)
 from open_notebook.database.repository import (
     db_connection,
     parse_record_ids,
@@ -45,8 +32,41 @@ from open_notebook.utils.encryption import get_secret_from_env
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-# JWT configuration shared in api.jwt_auth
+# JWT configuration
+JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_SECONDS = 86400  # 24 hours
+
+
+def _get_jwt_secret() -> str:
+    """Derive JWT secret from encryption key for consistency."""
+    secret = get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY")
+    if not secret:
+        # Fallback: use a default secret (only for dev without encryption)
+        return "lumina-dev-jwt-secret-change-in-production"
+    return secret
+
+
+def _create_jwt_token(username: str, user_id: str) -> str:
+    """Create a JWT token for the authenticated user."""
+    payload = {
+        "sub": user_id,
+        "username": username,
+        "exp": int(time.time()) + JWT_EXPIRY_SECONDS,
+        "iat": int(time.time()),
+    }
+    return jwt.encode(payload, _get_jwt_secret(), algorithm=JWT_ALGORITHM)
+
+
+def _decode_jwt_token(token: str) -> Optional[Dict[str, Any]]:
+    """Decode and validate a JWT token. Returns payload or None."""
+    try:
+        return jwt.decode(token, _get_jwt_secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        logger.warning("JWT token expired")
+        return None
+    except jwt.InvalidTokenError as e:
+        logger.warning(f"Invalid JWT token: {e}")
+        return None
 
 
 async def _get_db_users() -> List[Dict[str, Any]]:
@@ -65,6 +85,28 @@ async def _get_db_users() -> List[Dict[str, Any]]:
     except Exception as e:
         logger.debug(f"Failed to query users: {e}")
         return []
+
+
+async def _find_user_by_username(username: str) -> Optional[Dict[str, Any]]:
+    """Find a user by username."""
+    try:
+        async with db_connection() as conn:
+            result = parse_record_ids(
+                await conn.query(
+                    "SELECT * FROM app_user WHERE username = $username LIMIT 1",
+                    {"username": username},
+                )
+            )
+            if isinstance(result, list):
+                if result and isinstance(result[0], list):
+                    users = result[0]
+                else:
+                    users = result
+                return users[0] if users else None
+            return None
+    except Exception as e:
+        logger.debug(f"Failed to find user: {e}")
+        return None
 
 
 def _get_user_id(user: Dict[str, Any]) -> str:
@@ -110,16 +152,10 @@ async def get_auth_status():
 
 
 @router.post("/setup", response_model=UserResponse)
-async def setup_admin(request: SetupRequest, http_request: Request):
+async def setup_admin(request: SetupRequest):
     """
     Create the first admin user. Only works when no users exist in the database.
     """
-    legacy_password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
-    if legacy_password:
-        auth_header = http_request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer ") or auth_header[7:] != legacy_password:
-            raise HTTPException(status_code=401, detail="Unauthorized")
-
     if len(await _get_db_users()) > 0:
         raise HTTPException(
             status_code=400,
@@ -154,7 +190,6 @@ async def setup_admin(request: SetupRequest, http_request: Request):
             else:
                 raise HTTPException(status_code=500, detail="Failed to create user")
 
-            invalidate_has_users_cache()
             return UserResponse(
                 username=user.get("username", request.username),
                 created=str(user.get("created", "")),
@@ -175,9 +210,8 @@ async def login(request: LoginRequest):
     # Check legacy password first
     legacy_password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
     if legacy_password and request.password == legacy_password:
-        # Legacy auth: return the shared password itself so protected routes
-        # and auth-store revalidation continue to work in legacy mode.
-        token = legacy_password
+        # Legacy auth: accept any username with the correct legacy password
+        token = _create_jwt_token(request.username, "legacy")
         return LoginResponse(
             success=True,
             token=token,
@@ -186,7 +220,7 @@ async def login(request: LoginRequest):
         )
 
     # Database auth
-    user = await find_user_by_username(request.username)
+    user = await _find_user_by_username(request.username)
     if not user:
         return LoginResponse(
             success=False,
@@ -200,7 +234,7 @@ async def login(request: LoginRequest):
         )
 
     user_id = _get_user_id(user)
-    token = create_jwt_token(request.username, user_id, user)
+    token = _create_jwt_token(request.username, user_id)
 
     return LoginResponse(
         success=True,
@@ -227,7 +261,7 @@ async def change_password(request: ChangePasswordRequest, http_request: Request)
     # (the legacy middleware might have already authenticated)
     payload = None
     if token:
-        payload = await validate_jwt_token(token)
+        payload = _decode_jwt_token(token)
 
     # Also check legacy password
     legacy_password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
@@ -277,7 +311,7 @@ async def change_password(request: ChangePasswordRequest, http_request: Request)
 
     # Database auth mode
     username = payload.get("username", "")
-    user = await find_user_by_username(username)
+    user = await _find_user_by_username(username)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
@@ -319,15 +353,12 @@ async def get_current_user(http_request: Request):
     else:
         raise HTTPException(status_code=401, detail="Missing authorization")
 
-    payload = await validate_jwt_token(token)
+    payload = _decode_jwt_token(token)
     if not payload:
-        legacy_password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
-        if legacy_password and token == legacy_password:
-            return UserResponse(username="legacy", created="", updated="")
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     username = payload.get("username", "")
-    user = await find_user_by_username(username)
+    user = await _find_user_by_username(username)
     if not user:
         return UserResponse(
             username=username,
@@ -340,133 +371,3 @@ async def get_current_user(http_request: Request):
         created=str(user.get("created", "")),
         updated=str(user.get("updated", "")),
     )
-
-
-@router.post("/send-code", response_model=SendCodeResponse)
-async def auth_send_code(request: SendCodeRequest):
-    """
-    Send a verification code to an email address.
-    Used for both registration and password reset.
-    """
-    if request.purpose == "reset_password" and not await check_user_exists(request.email):
-        return SendCodeResponse(
-            success=True,
-            message="If an account exists for this email, a verification code has been sent",
-            expires_in_seconds=CODE_TTL_SECONDS,
-        )
-
-    ok, msg = await send_code(request.email, request.purpose, request.language)
-    return SendCodeResponse(
-        success=ok,
-        message=msg,
-        expires_in_seconds=CODE_TTL_SECONDS,
-    )
-
-
-@router.post("/register", response_model=RegisterResponse)
-async def auth_register(request: RegisterRequest):
-    """
-    Register a new account with email + verification code + password.
-    Public registration must be enabled via ALLOW_PUBLIC_REGISTRATION env var.
-    """
-    # Check if registration is allowed
-    if not ALLOW_PUBLIC_REGISTRATION:
-        return RegisterResponse(
-            success=False,
-            message="Public registration is disabled",
-            username=None,
-        )
-
-    if await check_user_exists(request.email):
-        return RegisterResponse(
-            success=False,
-            message="An account with this email already exists",
-            username=None,
-        )
-
-    # Verify the code
-    ok, msg = await verify_code(request.email, request.code, "register")
-    if not ok:
-        return RegisterResponse(
-            success=False,
-            message=msg,
-            username=None,
-        )
-
-    # Create the user
-    hashed = hash_password(request.password)
-    user_id = f"app_user:{request.email}"
-
-    try:
-        async with db_connection() as conn:
-            result = parse_record_ids(
-                await conn.query(
-                    "CREATE app_user SET username = $username, hashed_password = $hashed, created = time::now(), updated = time::now()",
-                    {
-                        "username": request.email,
-                        "hashed": hashed,
-                    },
-                )
-            )
-            if isinstance(result, list) and result:
-                if isinstance(result[0], list):
-                    user = result[0][0]
-                else:
-                    user = result[0]
-            else:
-                raise Exception("Failed to create user record")
-
-            logger.info(f"New user registered: {request.email}")
-            invalidate_has_users_cache()
-            return RegisterResponse(
-                success=True,
-                message="Account created successfully",
-                username=request.email,
-            )
-    except Exception as e:
-        logger.error(f"Registration failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
-
-
-@router.post("/reset-password", response_model=ResetPasswordResponse)
-async def auth_reset_password(request: ResetPasswordRequest):
-    """
-    Reset a user's password using email + verification code + new password.
-    """
-    # Check user exists
-    if not await check_user_exists(request.email):
-        # Don't reveal whether the email exists
-        return ResetPasswordResponse(
-            success=False,
-            message="Invalid or expired code",
-        )
-
-    # Verify the code
-    ok, msg = await verify_code(request.email, request.code, "reset_password")
-    if not ok:
-        return ResetPasswordResponse(
-            success=False,
-            message=msg,
-        )
-
-    # Update the password
-    hashed = hash_password(request.new_password)
-    user = await find_user_by_username(request.email)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    user_id = _get_user_id(user)
-
-    try:
-        await repo_update(
-            "app_user",
-            user_id,
-            {"hashed_password": hashed},
-        )
-        logger.info(f"Password reset for user: {request.email}")
-        return ResetPasswordResponse(
-            success=True,
-            message="Password reset successfully",
-        )
-    except Exception as e:
-        logger.error(f"Password reset failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Password reset failed: {str(e)}")

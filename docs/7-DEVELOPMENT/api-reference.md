@@ -12,20 +12,14 @@ Complete REST API for Open Notebook. All endpoints are served from the API backe
 
 ### 1. Authentication
 
-Preferred current flow: database-backed username/password login that returns a JWT.
+Simple password-based (development only):
 
 ```bash
-# Login first
-curl -X POST http://localhost:5055/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin"}'
-
-# Then use the returned token
 curl http://localhost:5055/api/notebooks \
-  -H "Authorization: Bearer <jwt-token>"
+  -H "Authorization: Bearer your_password"
 ```
 
-Legacy compatibility still exists: if `OPEN_NOTEBOOK_PASSWORD` is set, the middleware accepts `Authorization: Bearer <password>` instead of a JWT.
+**⚠️ Production**: Replace with OAuth/JWT. See [Security Configuration](../5-CONFIGURATION/security.md) for details.
 
 ### 2. Base API Flow
 
@@ -101,41 +95,24 @@ Instead of memorizing endpoints, use the interactive API docs:
 
 ### Current (Development)
 
-The API supports two auth modes:
-
-1. Preferred: database users + JWT tokens
-2. Legacy compatibility: `OPEN_NOTEBOOK_PASSWORD` env var
-
-Recommended flow:
+All requests require password header:
 
 ```bash
-# Check auth mode
-curl http://localhost:5055/api/auth/status
-
-# Login and get JWT
-curl -X POST http://localhost:5055/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin"}'
-
-# Use JWT for protected endpoints
-curl -H "Authorization: Bearer <jwt-token>" \
-  http://localhost:5055/api/notebooks
+curl -H "Authorization: Bearer your_password" http://localhost:5055/api/notebooks
 ```
 
-If your deployment still uses legacy mode, send the password itself as the Bearer credential.
+Password configured via `OPEN_NOTEBOOK_PASSWORD` environment variable.
 
 > **📖 See [Security Configuration](../5-CONFIGURATION/security.md)** for complete authentication setup, API examples, and production hardening.
 
 ### Production
 
-Current production-friendly baseline is the built-in username/password + JWT flow, optionally placed behind a reverse proxy.
+**⚠️ Not secure.** Replace with:
+- OAuth 2.0 (recommended)
+- JWT tokens
+- API keys
 
-For stronger enterprise setups, consider adding:
-- OAuth 2.0 / OIDC at the proxy layer
-- SSO in front of the application
-- Network restrictions and HTTPS termination
-
-See [Security Configuration](../5-CONFIGURATION/security.md) for deployment guidance.
+See [Security Configuration](../5-CONFIGURATION/security.md) for production setup.
 
 ---
 
@@ -227,7 +204,7 @@ All errors return JSON with status code:
 
 ## Learning Path
 
-1. **Authentication**: Call `/api/auth/status` then `/api/auth/login` to obtain a JWT
+1. **Authentication**: Add `X-Password` header to all requests
 2. **Create a notebook**: `POST /notebooks` with name and description
 3. **Add a source**: `POST /sources` with file, URL, or text
 4. **Query your content**: `POST /chat/execute` to ask questions
@@ -237,7 +214,7 @@ All errors return JSON with status code:
 
 ## Production Considerations
 
-- Decide whether to use built-in JWT auth only or layer OAuth/OIDC in front via reverse proxy
+- Replace password auth with OAuth/JWT (see [Security](../5-CONFIGURATION/security.md))
 - Add rate limiting via reverse proxy (Nginx, CloudFlare, Kong)
 - Enable CORS restrictions (currently allows all origins)
 - Use HTTPS via reverse proxy (see [Reverse Proxy](../5-CONFIGURATION/reverse-proxy.md))

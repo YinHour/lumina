@@ -4,7 +4,7 @@ DEFINE TABLE IF NOT EXISTS source SCHEMAFULL;
 DEFINE FIELD IF NOT EXISTS
     asset
     ON TABLE source
-    TYPE option<object> FLEXIBLE;
+    FLEXIBLE TYPE option<object>;
 
 DEFINE FIELD IF NOT EXISTS title ON TABLE source TYPE option<string>;
 DEFINE FIELD IF NOT EXISTS topics ON TABLE source TYPE option<array<string>>;

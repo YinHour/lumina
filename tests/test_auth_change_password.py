@@ -10,15 +10,15 @@ from api.routers.auth import change_password
 @pytest.mark.asyncio
 @patch("api.routers.auth.repo_update", new_callable=AsyncMock)
 @patch("api.routers.auth.verify_password")
-@patch("api.routers.auth.find_user_by_username", new_callable=AsyncMock)
-@patch("api.routers.auth.validate_jwt_token", new_callable=AsyncMock)
+@patch("api.routers.auth._find_user_by_username", new_callable=AsyncMock)
+@patch("api.routers.auth._decode_jwt_token")
 async def test_change_password_updates_app_user_via_repo_update(
-    mock_validate_token,
+    mock_decode_token,
     mock_find_user,
     mock_verify_password,
     mock_repo_update,
 ):
-    mock_validate_token.return_value = {"username": "admin"}
+    mock_decode_token.return_value = {"username": "admin"}
     mock_find_user.return_value = {
         "id": "app_user:admin",
         "username": "admin",

@@ -7,7 +7,7 @@ Clone the repository and run locally. **For developers and contributors.**
 - **Python 3.11+** - [Download](https://www.python.org/)
 - **Node.js 18+** - [Download](https://nodejs.org/)
 - **Git** - [Download](https://git-scm.com/)
-- **SurrealDB v2 binary or Docker** (v2 is required for current migrations)
+- **Docker** (for SurrealDB) - [Download](https://docker.com/)
 - **uv** (Python package manager) - `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - API key from OpenAI or similar (or use Ollama for free)
 
@@ -48,18 +48,9 @@ conda install -c conda-forge uv nodejs -y
 uv sync
 ```
 
-> **Note**: Installing `uv` inside your Conda environment ensures the current local workflow (`./dev-init.sh`, `make api`, and related helper commands) continues to work seamlessly.
+> **Note**: Installing `uv` inside your Conda environment ensures that commands like `make start-all` and `make api` continue to work seamlessly.
 
-### 3. Start the local dev stack (recommended)
-
-```bash
-cp .env.example .env
-./dev-init.sh
-```
-
-This is the preferred contributor workflow. The script starts the API, worker, and frontend, and auto-starts a local SurrealDB v2 instance if needed.
-
-### 4. Start SurrealDB manually (optional)
+### 3. Start SurrealDB
 
 ```bash
 # Terminal 1
@@ -67,48 +58,38 @@ make database
 # or: docker compose up surrealdb
 ```
 
-### 5. Set Environment Variables
+### 4. Set Environment Variables
 
 ```bash
 cp .env.example .env
 # Edit .env and set:
 # OPEN_NOTEBOOK_ENCRYPTION_KEY=my-secret-key
-# EMAIL_PROVIDER=debug
-# ALLOW_PUBLIC_REGISTRATION=true
 ```
 
 After starting the app, configure AI providers via the **Settings → API Keys** UI in the browser.
 
-### 6. Start API
+### 5. Start API
 
 ```bash
 # Terminal 2
 make api
-# or: uv run --env-file .env run_api.py
+# or: uv run --env-file .env uvicorn api.main:app --host 0.0.0.0 --port 5055
 ```
 
-### 7. Start Frontend
+### 6. Start Frontend
 
 ```bash
 # Terminal 3
 cd frontend && npm install && npm run dev
 ```
 
-### 8. Access
+### 7. Access
 
 - **Frontend**: http://localhost:3000
 - **API Docs**: http://localhost:5055/docs
 - **Database**: http://localhost:8000
 
-### 9. Verify authentication pages
-
-- **Login**: http://localhost:3000/login
-- **Register**: http://localhost:3000/register
-- **Forgot password**: http://localhost:3000/forgot-password
-
-If `EMAIL_PROVIDER=debug`, the verification code for registration/reset-password is written to the API log instead of being sent to a real email inbox.
-
-### 10. Configure AI Provider
+### 8. Configure AI Provider
 
 1. Open http://localhost:3000
 2. Go to **Settings** → **API Keys**
@@ -142,7 +123,7 @@ uv run pytest tests/
 
 ```bash
 # Start everything
-./dev-init.sh
+make start-all
 
 # View API docs
 open http://localhost:5055/docs
@@ -172,8 +153,8 @@ Install Node.js from https://nodejs.org/
 ### Database connection errors
 
 ```bash
-lsof -i :8000  # Check SurrealDB or local binary is listening
-grep '^SURREAL_' .env
+docker ps  # Check SurrealDB running
+docker logs surrealdb  # View logs
 ```
 
 ### Port 5055 already in use

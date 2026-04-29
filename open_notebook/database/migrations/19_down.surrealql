@@ -1,6 +1,0 @@
-REMOVE INDEX IF EXISTS idx_verification_code_email_purpose ON TABLE verification_code;
-REMOVE INDEX IF EXISTS idx_verification_code_code ON TABLE verification_code;
-REMOVE FIELD IF EXISTS expires_at ON TABLE verification_code;
-REMOVE FIELD IF EXISTS used ON TABLE verification_code;
-REMOVE FIELD IF EXISTS attempts ON TABLE verification_code;
-REMOVE FIELD IF EXISTS created ON TABLE verification_code;

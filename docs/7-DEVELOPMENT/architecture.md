@@ -776,7 +776,7 @@ Async job submission (source processing, podcast generation) prevents request ti
 
 - **Migrations run automatically** on every startup; check logs for errors
 - **SurrealDB must be running** before starting API (connection test in lifespan)
-- **Auth middleware supports dual mode**: legacy shared-password auth via `OPEN_NOTEBOOK_PASSWORD`, or database-backed username/password login with JWT for current deployments
+- **Auth middleware is basic** (password-only); upgrade to OAuth/JWT for production
 
 ### Database Operations
 

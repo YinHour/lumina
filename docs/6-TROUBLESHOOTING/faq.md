@@ -156,8 +156,7 @@ tar -xzf backup-20240101.tar.gz
 ### What are the security best practices?
 
 - Never share API keys publicly
-- Prefer the built-in username/password login and JWT sessions for normal deployments
-- Use `OPEN_NOTEBOOK_PASSWORD` only if you intentionally want legacy shared-password mode
+- Use `OPEN_NOTEBOOK_PASSWORD` for public deployments
 - Use HTTPS for production (via reverse proxy)
 - Keep Docker images updated
 - Encrypt backups if they contain sensitive data
@@ -171,13 +170,13 @@ tar -xzf backup-20240101.tar.gz
 **Yes**: Open Notebook provides a REST API:
 - Full API documentation at `http://localhost:5055/docs`
 - Support for all UI functionality
-- Authentication via `/api/auth/login` + Bearer JWT (legacy shared-password mode is still supported)
+- Authentication via password header
 
 ### Can I run Open Notebook in production?
 
 **Yes**: Designed for production use with:
 - Docker deployment
-- Security features (built-in username/password auth, JWT sessions, optional legacy shared-password mode)
+- Security features (password protection)
 - Monitoring and logging
 - Reverse proxy support (nginx, Caddy, Traefik)
 

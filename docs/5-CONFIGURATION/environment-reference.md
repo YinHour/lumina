@@ -11,12 +11,8 @@ Comprehensive list of all environment variables available in Open Notebook.
 | `API_URL` | No | Auto-detected | URL where frontend reaches API (e.g., http://localhost:5055) |
 | `INTERNAL_API_URL` | No | http://localhost:5055 | Internal API URL for Next.js server-side proxying |
 | `API_CLIENT_TIMEOUT` | No | 300 | Client timeout in seconds (how long to wait for API response) |
-| `OPEN_NOTEBOOK_PASSWORD` | No | None | Legacy shared-password mode. If set, it takes priority over database JWT auth for protected API routes. |
+| `OPEN_NOTEBOOK_PASSWORD` | No | None | Password to protect Open Notebook instance |
 | `OPEN_NOTEBOOK_ENCRYPTION_KEY` | **Yes** | None | Secret string to encrypt credentials stored in database (any string works). **Required** for the credential system. Supports Docker secrets via `_FILE` suffix. |
-| `EMAIL_PROVIDER` | No | `smtp` | Verification email backend: `smtp`, `resend`, or `debug` for local testing |
-| `ALLOW_PUBLIC_REGISTRATION` | No | `false` | Enable self-registration via `/register` |
-| `VERIFICATION_CODE_TTL_SECONDS` | No | `600` | Verification code expiry time in seconds |
-| `VERIFICATION_CODE_COOLDOWN_SECONDS` | No | `300` | Minimum wait between verification code sends for the same email/purpose |
 | `HOSTNAME` | No | `0.0.0.0` (in Docker) | Network interface for Next.js to bind to. Default `0.0.0.0` ensures accessibility from reverse proxies |
 
 > **Important**: `OPEN_NOTEBOOK_ENCRYPTION_KEY` is required for storing AI provider credentials via the Settings UI. Without it, you cannot save credentials. If you change or lose this key, all stored credentials become unreadable.
@@ -150,18 +146,10 @@ Then configure AI providers via **Settings → API Keys** in the browser.
 ### Production Deployment
 ```
 OPEN_NOTEBOOK_ENCRYPTION_KEY=your-strong-secret-key
+OPEN_NOTEBOOK_PASSWORD=your-secure-password
 API_URL=https://mynotebook.example.com
 SURREAL_USER=production_user
-SURREAL_PASSWORD=***
-```
-
-Use the built-in login flow (`/login`) for normal production auth. Set `OPEN_NOTEBOOK_PASSWORD` only if you explicitly want legacy shared-password mode.
-
-### Local Auth Flow Testing
-```
-OPEN_NOTEBOOK_ENCRYPTION_KEY=dev-secret-key
-EMAIL_PROVIDER=debug
-ALLOW_PUBLIC_REGISTRATION=true
+SURREAL_PASSWORD=secure_password
 ```
 
 ### Self-Hosted Behind Reverse Proxy
@@ -226,10 +214,9 @@ env | grep -E "^[A-Z_]+=" | sort
 
 ## Quick Setup Checklist
 
-- [ ] Set `OPEN_NOTEBOOK_ENCRYPTION_KEY` in docker-compose.yml or `.env`
+- [ ] Set `OPEN_NOTEBOOK_ENCRYPTION_KEY` in docker-compose.yml
 - [ ] Set database credentials (`SURREAL_*`)
 - [ ] Start services
-- [ ] If testing registration/reset-password locally, set `EMAIL_PROVIDER=debug`
 - [ ] Open browser → Go to **Settings → API Keys**
 - [ ] **Add Credential** for your AI provider
 - [ ] **Test Connection** to verify

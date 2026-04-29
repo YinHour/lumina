@@ -82,9 +82,7 @@ Add to your VS Code settings or `.vscode/mcp.json`:
 ## Configuration
 
 - **OPEN_NOTEBOOK_URL**: URL to your Open Notebook API (default: `http://localhost:5055`)
-- **OPEN_NOTEBOOK_PASSWORD**: Optional legacy shared-password mode. Only use this if your deployment explicitly sets `OPEN_NOTEBOOK_PASSWORD`.
-
-> Note: the Lumina/Open Notebook app now prefers username/password login plus JWT sessions for browser/API usage. This MCP server currently documents the legacy shared-password environment variable because that is what the MCP bridge consumes.
+- **OPEN_NOTEBOOK_PASSWORD**: Optional - only needed if you've enabled password protection
 
 ### For Remote Servers
 
@@ -188,7 +186,7 @@ The Open Notebook MCP server is published to the official MCP Registry:
 ### Connection Errors
 
 1. Verify the `OPEN_NOTEBOOK_URL` is correct and accessible
-2. If using legacy password mode, ensure `OPEN_NOTEBOOK_PASSWORD` is set correctly
+2. If using password protection, ensure `OPEN_NOTEBOOK_PASSWORD` is set correctly
 3. For remote servers, make sure port 5055 is accessible from your machine
 4. Check firewall settings if connecting to a remote server
 

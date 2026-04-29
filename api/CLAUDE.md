@@ -206,16 +206,12 @@ The `key_provider` module provisions DB-stored credentials into environment vari
 
 ### Authentication
 
-Authentication now uses the same dual-mode `PasswordAuthMiddleware` as the rest of the API:
-- Preferred mode: database-backed username/password login with JWT bearer tokens
-- Legacy compatibility: shared password via `OPEN_NOTEBOOK_PASSWORD`
+No changes to authentication. The `credentials` router uses the same `PasswordAuthMiddleware` as all other endpoints. Keys are protected by the same password-based auth.
 
-**Auth Flow** (from `api/auth.py` / `api/routers/auth.py`):
-- `GET /auth/status`: reports whether auth is disabled, legacy, or database/JWT mode
-- `POST /auth/login`: exchanges username + password for a JWT
-- `PasswordAuthMiddleware`: accepts `Authorization: Bearer <jwt>` for current deployments
-- If `OPEN_NOTEBOOK_PASSWORD` is set, legacy shared-password Bearer auth takes priority
-- Docker secrets support still exists via `OPEN_NOTEBOOK_PASSWORD_FILE`
+**Auth Flow** (unchanged from `api/auth.py`):
+- `PasswordAuthMiddleware`: Global middleware checking `Authorization: Bearer {password}` header
+- Default password: `open-notebook-change-me` (set `OPEN_NOTEBOOK_PASSWORD` in production)
+- Docker secrets support via `OPEN_NOTEBOOK_PASSWORD_FILE`
 
 ### Connection Testing (`open_notebook/ai/connection_tester.py`)
 

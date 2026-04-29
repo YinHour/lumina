@@ -1,6 +1,6 @@
 # Prompts Module
 
-Jinja2 prompt templates for multi-provider AI workflows in Lumina.
+Jinja2 prompt templates for multi-provider AI workflows in Open Notebook.
 
 ## Purpose
 
