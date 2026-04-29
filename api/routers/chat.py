@@ -340,10 +340,8 @@ async def stream_chat_response(
     session_id: str, message: str, context: dict, model_override: Optional[str] = None, enable_web_search: bool = False
 ):
     import json
-
+    from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-    from open_notebook.config import LANGGRAPH_CHAT_CHECKPOINT_FILE
     from open_notebook.graphs.chat import agent_state
     
     try:
@@ -372,7 +370,7 @@ async def stream_chat_response(
         
         yielded_ai_chunks = False
             
-        async with AsyncSqliteSaver.from_conn_string(LANGGRAPH_CHAT_CHECKPOINT_FILE) as saver:
+        async with AsyncSqliteSaver.from_conn_string(LANGGRAPH_CHECKPOINT_FILE) as saver:
             async_graph = agent_state.compile(checkpointer=saver)
             
             async for event in async_graph.astream_events(
@@ -476,16 +474,14 @@ async def stream_chat_response(
         yield f"data: {json.dumps(completion_event)}\n\n"
 
     except Exception as e:
-        import traceback
-
         from open_notebook.utils.error_classifier import classify_error
+        import traceback
         _, user_message = classify_error(e)
         logger.error(f"Error in chat streaming: {str(e)}\n{traceback.format_exc()}")
         error_event = {"type": "error", "message": user_message}
         yield f"data: {json.dumps(error_event)}\n\n"
 
 from fastapi.responses import StreamingResponse
-
 
 @router.post("/chat/execute")
 async def execute_chat(request: ExecuteChatRequest):

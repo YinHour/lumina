@@ -2,7 +2,6 @@
 
 import { AppShell } from '@/components/layout/AppShell'
 import { SettingsForm } from './components/SettingsForm'
-import { ChangePasswordForm } from '@/components/auth/ChangePasswordForm'
 import { useSettings } from '@/lib/hooks/use-settings'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from 'lucide-react'
@@ -24,10 +23,7 @@ export default function SettingsPage() {
               </Button>
             </div>
 
-            <div className="space-y-6">
-              <SettingsForm />
-              <ChangePasswordForm />
-            </div>
+            <SettingsForm />
           </div>
         </div>
       </div>

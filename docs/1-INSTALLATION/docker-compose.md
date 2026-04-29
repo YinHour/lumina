@@ -14,7 +14,7 @@ Multi-container setup with separate services. **Best for most users.**
 
 **Option A: Download from repository**
 ```bash
-curl -o docker-compose.yml https://raw.githubusercontent.com/YinHour/lumina/main/docker-compose.yml
+curl -o docker-compose.yml https://raw.githubusercontent.com/lfnovo/open-notebook/main/docker-compose.yml
 ```
 
 **Option B: Use the official file from the repo**
@@ -354,5 +354,5 @@ For production use, see:
 ## Getting Help
 
 - **Discord**: [Community support](https://discord.gg/37XJPXfz2w)
-- **Issues**: [GitHub Issues](https://github.com/YinHour/lumina/issues)
+- **Issues**: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
 - **Docs**: [Full documentation](../index.md)

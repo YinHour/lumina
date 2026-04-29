@@ -257,7 +257,7 @@ A: → [7-DEVELOPMENT](../7-DEVELOPMENT/index.md) — Contributing guide
 ## 📞 Getting Help
 
 - **Discord Community** — https://discord.gg/37XJPXfz2w
-- **GitHub Issues** — https://github.com/YinHour/lumina/issues
+- **GitHub Issues** — https://github.com/lfnovo/open-notebook/issues
 - **Documentation** — You're reading it!
 
 ---
@@ -286,4 +286,4 @@ A: → [7-DEVELOPMENT](../7-DEVELOPMENT/index.md) — Contributing guide
 
 ---
 
-Last updated: April 2026 | Lumina (Open Notebook) v1.8.4
+Last updated: January 2026 | Open Notebook v1.2.4+

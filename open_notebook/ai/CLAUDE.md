@@ -75,7 +75,6 @@ All models use Esperanto library as provider abstraction (OpenAI, Anthropic, Goo
 - **Fresh defaults**: DefaultModels.get_instance() always fetches from database (not cached) for live config updates
 - **Config override**: provision_langchain_model() accepts kwargs passed to AIFactory.create_* methods
 - **Token-based selection**: provision_langchain_model() detects large contexts and upgrades model automatically
-- **Rate-limit retry with fallback key**: If `OPENAI_API_KEY_FALLBACK` env var is set and the primary model hits a `RateLimitError`, `_RateLimitRetryModel` automatically recreates the model with the fallback key and retries; env var is restored after retry
 - **Type assertions**: get_speech_to_text(), get_embedding_model() assert returned type (safety check)
 - **Credential→Env fallback**: If model has linked credential, config from `credential.to_esperanto_config()` is used directly; otherwise keys checked in database via key_provider, then environment variables; enables UI-based key management while maintaining backward compatibility
 
@@ -99,7 +98,6 @@ All models use Esperanto library as provider abstraction (OpenAI, Anthropic, Goo
 - **Fallback chain specificity**: "transformation" type falls back to default_chat_model if not explicitly set (convention-based)
 - **kwargs passed through**: provision_langchain_model() passes kwargs to AIFactory but doesn't validate what's accepted
 - **Key provider sets env vars**: `provision_provider_keys()` modifies `os.environ` to inject DB-stored keys (from `Credential` records); Esperanto reads from env vars (only used as fallback when model has no linked credential)
-- **Rate-limit retry is synchronous per-call**: `_RateLimitRetryModel` retries at the LangChain invoke level — each call independently falls back on 429; the fallback key must be set as `OPENAI_API_KEY_FALLBACK` in the environment (not in .env for security; use `export` in shell or systemd unit)
 
 ## How to Extend
 

@@ -18,7 +18,7 @@ Open Notebook is an open-source, privacy-focused alternative to Google's Noteboo
 ### How is it different from Google Notebook LM?
 
 **Privacy**: Your data stays local by default. Only your chosen AI providers receive queries.
-**Flexibility**: Support for 18+ AI providers (OpenAI, Anthropic, Google, local models, etc.)
+**Flexibility**: Support for 17+ AI providers (OpenAI, Anthropic, Google, local models, etc.)
 **Customization**: Open source, so you can modify and extend functionality
 **Control**: You control your data, models, and processing
 
@@ -241,7 +241,7 @@ Include:
 - System information
 - Configuration details (without API keys)
 
-Submit to: [GitHub Issues](https://github.com/YinHour/lumina/issues)
+Submit to: [GitHub Issues](https://github.com/lfnovo/open-notebook/issues)
 
 ### Where can I get help?
 

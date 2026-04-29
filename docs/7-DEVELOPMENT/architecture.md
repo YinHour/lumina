@@ -57,7 +57,7 @@ Open Notebook is built on a **three-tier, async-first architecture** designed fo
 **Purpose**: Responsive, interactive user interface for research, notes, chat, and podcast management.
 
 **Technology Stack**:
-- **Framework**: Next.js 16 with React 19
+- **Framework**: Next.js 15 with React 19
 - **Language**: TypeScript with strict type checking
 - **State Management**: Zustand (lightweight store) + TanStack Query (server state)
 - **Styling**: Tailwind CSS + Shadcn/ui component library

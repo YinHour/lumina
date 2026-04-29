@@ -8,8 +8,6 @@ allowing tests to import from the api and open_notebook modules.
 import os
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
-import pytest
 
 # Ensure password auth is disabled for tests BEFORE any imports
 # The PasswordAuthMiddleware skips auth when this env var is not set
@@ -31,14 +29,3 @@ else:
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-
-
-@pytest.fixture(autouse=True)
-def mock_auth_no_users():
-    """Disable JWT auth for tests by mocking _check_has_users to return False.
-
-    The PasswordAuthMiddleware requires JWT tokens when users exist in the database.
-    Since tests don't set up users, we mock this to return False so auth is skipped.
-    """
-    with patch("api.auth._check_has_users", new_callable=AsyncMock, return_value=False):
-        yield

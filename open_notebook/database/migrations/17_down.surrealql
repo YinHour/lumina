@@ -1,8 +1,0 @@
--- Rollback migration 17: remove app-level auth table and seed user
-
-REMOVE INDEX idx_app_user_username ON TABLE app_user;
-REMOVE FIELD username ON TABLE app_user;
-REMOVE FIELD hashed_password ON TABLE app_user;
-REMOVE FIELD created ON TABLE app_user;
-REMOVE FIELD updated ON TABLE app_user;
-REMOVE TABLE app_user;

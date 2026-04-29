@@ -1,8 +1,6 @@
-# Lumina - Open Notebook Fork
+# Docker Compose Examples
 
-This folder contains Lumina, a privacy-focused AI research assistant — an open-source fork of [Open Notebook](https://github.com/lfnovo/open-notebook) with custom optimizations and features.
-
-> This is a fork of the upstream `lfnovo/open-notebook` project. The Docker images (`lfnovo/open_notebook`) are from the upstream project and can be used as-is.
+This folder contains different `docker-compose.yml` configurations for various use cases.
 
 ## 📋 Available Examples
 
