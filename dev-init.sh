@@ -244,7 +244,7 @@ log "👤 Initializing admin user..."
 log "⚙️ Starting background worker..."
 (
   cd "$ROOT_DIR"
-  uv run --env-file .env surreal-commands-worker --import-modules commands
+  uv run --env-file .env python3 scripts/worker_with_timeout.py --import-modules commands
 ) >/tmp/lumina-worker.log 2>&1 &
 WORKER_PID=$!
 

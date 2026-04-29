@@ -3,7 +3,7 @@
 import { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { ChevronLeft, LucideIcon } from 'lucide-react'
+import { ChevronLeft, ChevronRight, LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface CollapsibleColumnProps {
@@ -12,6 +12,7 @@ interface CollapsibleColumnProps {
   collapsedIcon: LucideIcon
   collapsedLabel: string
   children: ReactNode
+  collapseDirection?: 'left' | 'right'
 }
 
 export function CollapsibleColumn({
@@ -20,6 +21,7 @@ export function CollapsibleColumn({
   collapsedIcon: CollapsedIcon,
   collapsedLabel,
   children,
+  collapseDirection = 'left',
 }: CollapsibleColumnProps) {
   const isCJK = /[\u4e00-\u9fa5\u3040-\u30ff\uac00-\ud7af]/.test(collapsedLabel);
 
@@ -37,7 +39,8 @@ export function CollapsibleColumn({
                 'bg-card hover:bg-accent/50',
                 'transition-all duration-150',
                 'cursor-pointer group',
-                'py-6'
+                'py-6',
+                collapseDirection === 'right' && 'ml-auto',
               )}
               aria-label={`Expand ${collapsedLabel}`}
             >
@@ -50,7 +53,7 @@ export function CollapsibleColumn({
               </div>
             </button>
           </TooltipTrigger>
-          <TooltipContent side="right">
+          <TooltipContent side={collapseDirection === 'right' ? 'left' : 'right'}>
             <p>Expand {collapsedLabel}</p>
           </TooltipContent>
         </Tooltip>
@@ -66,7 +69,8 @@ export function CollapsibleColumn({
 }
 
 // Factory function to create a collapse button for card headers
-export function createCollapseButton(onToggle: () => void, label: string) {
+export function createCollapseButton(onToggle: () => void, label: string, direction: 'left' | 'right' = 'left') {
+  const ChevronIcon = direction === 'right' ? ChevronRight : ChevronLeft
   return (
     <div className="hidden lg:block">
       <TooltipProvider>
@@ -82,7 +86,7 @@ export function createCollapseButton(onToggle: () => void, label: string) {
               className="h-7 w-7 hover:bg-accent"
               aria-label={`Collapse ${label}`}
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronIcon className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>

@@ -1,5 +1,6 @@
 import asyncio
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -15,7 +16,12 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse, Response
 from loguru import logger
-from surreal_commands import execute_command_sync, submit_command
+from surreal_commands import (
+    command_service,
+    get_command_status,
+    submit_command,
+    wait_for_command_sync,
+)
 
 from api.command_service import CommandService
 from api.models import (
@@ -40,6 +46,76 @@ from open_notebook.domain.transformation import Transformation
 from open_notebook.exceptions import InvalidInputError
 
 router = APIRouter()
+
+SOURCE_PROCESSING_TIMEOUT_SECONDS = int(
+    os.environ.get("LUMINA_WORKER_TASK_TIMEOUT_SECONDS", str(20 * 60))
+)
+ACTIVE_COMMAND_STATUSES = {"new", "queued", "running"}
+SOURCE_PROCESSING_TIMEOUT_MESSAGE = (
+    "Processing failed: worker did not return a result within 20 minutes"
+)
+
+
+def _command_status_value(status: Any) -> str:
+    return getattr(status, "value", status)
+
+
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value
+    else:
+        text = str(value).strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            dt = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _is_command_timed_out(created_at: Any, *, now: Optional[datetime] = None) -> bool:
+    created_dt = _coerce_datetime(created_at)
+    if created_dt is None:
+        return False
+    now_dt = now or datetime.now(timezone.utc)
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc)
+    return (now_dt.astimezone(timezone.utc) - created_dt).total_seconds() >= SOURCE_PROCESSING_TIMEOUT_SECONDS
+
+
+async def _mark_command_failed(command_id: str, error_message: str) -> None:
+    await repo_query(
+        "UPDATE $command_id SET status = 'failed', result = $result, error_message = $error_message, updated = time::now()",
+        {
+            "command_id": command_id,
+            "result": {"success": False, "error_message": error_message},
+            "error_message": error_message,
+        },
+    )
+
+
+def _sync_process_source_command(args: dict[str, Any]) -> Any:
+    command_id = submit_command("open_notebook", "process_source", args)
+    try:
+        return wait_for_command_sync(command_id, timeout=SOURCE_PROCESSING_TIMEOUT_SECONDS)
+    except TimeoutError as exc:
+        asyncio.run(
+            command_service.update_command_result(
+                command_id,
+                "failed",
+                {
+                    "success": False,
+                    "error_message": SOURCE_PROCESSING_TIMEOUT_MESSAGE,
+                },
+                SOURCE_PROCESSING_TIMEOUT_MESSAGE,
+            )
+        )
+        raise TimeoutError(SOURCE_PROCESSING_TIMEOUT_MESSAGE) from exc
 
 
 def _check_source_access(source_owner_id: Optional[str], source_visibility: str, user_id: Optional[str]) -> bool:
@@ -656,11 +732,8 @@ async def create_source(
                 # execute_command_sync uses asyncio.run() internally which can't
                 # be called from an already-running event loop (FastAPI)
                 result = await asyncio.to_thread(
-                    execute_command_sync,
-                    "open_notebook",  # app name
-                    "process_source",  # command name
+                    _sync_process_source_command,
                     command_input.model_dump(),
-                    timeout=300,  # 5 minute timeout for sync processing
                 )
 
                 if not result.is_success():
@@ -1021,8 +1094,40 @@ async def get_source_status(request: Request, source_id: str):
 
         # Get command status and processing info
         try:
-            status = await source.get_status()
-            processing_info = await source.get_processing_progress()
+            command_id = str(source.command)
+            status_result = await get_command_status(command_id)
+            if not status_result:
+                return SourceStatusResponse(
+                    status="unknown",
+                    message="Source processing status unknown",
+                    processing_info=None,
+                    command_id=command_id,
+                )
+
+            status = _command_status_value(status_result.status)
+            result = getattr(status_result, "result", None)
+            execution_metadata = (
+                result.get("execution_metadata", {}) if isinstance(result, dict) else {}
+            )
+            error_message = getattr(status_result, "error_message", None)
+
+            if status in ACTIVE_COMMAND_STATUSES and _is_command_timed_out(
+                getattr(status_result, "created", None)
+            ):
+                await _mark_command_failed(command_id, SOURCE_PROCESSING_TIMEOUT_MESSAGE)
+                status = "failed"
+                error_message = SOURCE_PROCESSING_TIMEOUT_MESSAGE
+                if not isinstance(result, dict):
+                    result = {}
+                result = {**result, "success": False, "error_message": error_message}
+
+            processing_info = {
+                "status": status,
+                "started_at": execution_metadata.get("started_at"),
+                "completed_at": execution_metadata.get("completed_at"),
+                "error": error_message,
+                "result": result,
+            }
 
             # Generate descriptive message based on status
             if status == "completed":
@@ -1042,7 +1147,7 @@ async def get_source_status(request: Request, source_id: str):
                 status=status,
                 message=message,
                 processing_info=processing_info,
-                command_id=str(source.command) if source.command else None,
+                command_id=command_id,
             )
 
         except Exception as e:

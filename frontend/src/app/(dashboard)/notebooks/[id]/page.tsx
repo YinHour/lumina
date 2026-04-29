@@ -211,13 +211,13 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                       <FileText className="h-4 w-4" />
                       {t.navigation.sources}
                     </TabsTrigger>
-                    <TabsTrigger value="notes" className="gap-2">
-                      <StickyNote className="h-4 w-4" />
-                      {t.common.notes}
-                    </TabsTrigger>
                     <TabsTrigger value="chat" className="gap-2">
                       <MessageSquare className="h-4 w-4" />
                       {t.common.chat}
+                    </TabsTrigger>
+                    <TabsTrigger value="notes" className="gap-2">
+                      <StickyNote className="h-4 w-4" />
+                      {t.common.notes}
                     </TabsTrigger>
                   </TabsList>
                 </Tabs>
@@ -268,7 +268,7 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
             {/* Sources Column */}
             <div className={cn(
               'transition-all duration-150',
-              sourcesCollapsed ? 'w-12 flex-shrink-0' : 'flex-none basis-1/3'
+              sourcesCollapsed ? 'w-12 flex-shrink-0' : 'flex-none basis-[20%]'
             )}>
               <SourcesColumn
                 sources={sources}
@@ -284,20 +284,6 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
               />
             </div>
 
-            {/* Notes Column */}
-            <div className={cn(
-              'transition-all duration-150',
-              notesCollapsed ? 'w-12 flex-shrink-0' : 'flex-none basis-1/3'
-            )}>
-              <NotesColumn
-                notes={notes}
-                isLoading={notesLoading}
-                notebookId={notebookId}
-                contextSelections={contextSelections.notes}
-                onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
-              />
-            </div>
-
             {/* Chat Column - always expanded, takes remaining space */}
             <div className="transition-all duration-150 flex-1 min-w-0 lg:pr-6 lg:-mr-6">
               <ChatColumn
@@ -305,6 +291,20 @@ export default function NotebookPage({ params }: { params: Promise<{ id: string 
                 contextSelections={contextSelections}
                 sources={sources}
                 sourcesLoading={sourcesLoading}
+              />
+            </div>
+
+            {/* Notes Column */}
+            <div className={cn(
+              'transition-all duration-150',
+              notesCollapsed ? 'w-12 flex-shrink-0 ml-auto' : 'flex-none basis-[20%]'
+            )}>
+              <NotesColumn
+                notes={notes}
+                isLoading={notesLoading}
+                notebookId={notebookId}
+                contextSelections={contextSelections.notes}
+                onContextModeChange={(noteId, mode) => handleContextModeChange(noteId, mode, 'note')}
               />
             </div>
           </div>
