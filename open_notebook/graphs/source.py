@@ -1,7 +1,6 @@
 import operator
 from typing import Any, Dict, List, Optional
 
-from content_core import extract_content
 from content_core.common import ProcessSourceState
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -9,12 +8,7 @@ from langgraph.types import Send
 from loguru import logger
 from typing_extensions import Annotated, TypedDict
 
-from open_notebook.ai.models import Model, ModelManager
-from open_notebook.content_extractors.markitdown import (
-    extract_markitdown,
-    is_markitdown_supported,
-)
-from open_notebook.domain.content_settings import ContentSettings
+from open_notebook.content_extractors.service import ContentExtractionService
 from open_notebook.domain.notebook import Asset, Source
 from open_notebook.domain.transformation import Transformation
 from open_notebook.graphs.transformation import graph as transform_graph
@@ -36,134 +30,12 @@ class TransformationState(TypedDict):
 
 
 async def content_process(state: SourceState) -> dict:
-    ContentSettings.clear_instance()  # Force reload from DB
-    content_settings = await ContentSettings.get_instance()
     content_state: Dict[str, Any] = state["content_state"]  # type: ignore[assignment]
-
-    content_state["url_engine"] = (
-        content_settings.default_content_processing_engine_url or "auto"
-    )
-    content_state["document_engine"] = (
-        content_settings.default_content_processing_engine_doc or "auto"
-    )
-    content_state["output_format"] = "markdown"
-
-    # Add speech-to-text model configuration from Default Models
-    try:
-        model_manager = ModelManager()
-        defaults = await model_manager.get_defaults()
-        if defaults.default_speech_to_text_model:
-            stt_model = await Model.get(defaults.default_speech_to_text_model)
-            if stt_model:
-                content_state["audio_provider"] = stt_model.provider
-                content_state["audio_model"] = stt_model.name
-                logger.info(
-                    f"Using speech-to-text model: {stt_model.provider}/{stt_model.name}"
-                )
-    except Exception as e:
-        logger.warning(f"Failed to retrieve speech-to-text model configuration: {e}")
-        # Continue without custom audio model (content-core will use its default)
+    extraction_service = ContentExtractionService()
 
     logger.info(f"Starting content extraction for source_id={state.get('source_id')}")
-    logger.info(f"Engine doc: {content_state.get('document_engine')}, URL: {content_state.get('url_engine')}")
     try:
-        import asyncio
-        import os
-        import subprocess
-        import tempfile
-        from content_core.common import ProcessSourceState
-        
-        def _sync_extract(state):
-            engine = state.get("document_engine")
-            file_path = state.get("file_path")
-            
-            # Intercept MarkItDown extraction before content-core validation, because
-            # content-core does not know Lumina's custom "markitdown" engine yet.
-            if engine == "markitdown" and file_path and is_markitdown_supported(file_path):
-                logger.info(f"Using MarkItDown to extract content from {file_path}")
-                return extract_markitdown(state)
-            elif engine == "markitdown":
-                logger.warning("MarkItDown does not support this file type. Falling back to simple engine.")
-                state["document_engine"] = "simple"
-
-            # Intercept MinerU extraction
-            if engine == "mineru" and file_path and file_path.lower().endswith(('.pdf', '.ppt', '.pptx', '.doc', '.docx')):
-                logger.info(f"Using MinerU to extract content from {file_path}")
-                try:
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        # Run mineru CLI
-                        env = os.environ.copy()
-                        if "HF_ENDPOINT" not in env:
-                            env["HF_ENDPOINT"] = "https://hf-mirror.com"
-                            
-                        try:
-                            # Enable table extraction enhancement
-                            env["MINERU_TABLE_ENABLE"] = "true"
-                            # Enable fast downloads
-                            env["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-                            # Use modelscope for faster downloads
-                            env["MINERU_MODEL_SOURCE"] = "modelscope"
-                            import sys
-                            
-                            logger.info("MinerU may need to download models on first run. Streaming output to console...")
-                            subprocess.run([
-                                "mineru",
-                                "-p", file_path,
-                                "-o", temp_dir,
-                                "-m", "auto",
-                                "--backend", "pipeline",
-                            ], check=True, env=env, stdout=sys.stdout, stderr=sys.stderr)
-                        except subprocess.CalledProcessError as e:
-                            logger.error(f"MinerU extraction process failed with exit code {e.returncode}")
-                            raise
-                        
-                        # Find the output directory (mineru creates a dir based on filename and model name)
-                        base_name = os.path.splitext(os.path.basename(file_path))[0]
-                        out_dir = os.path.join(temp_dir, base_name, "auto")
-                        
-                        md_content = ""
-                        if os.path.exists(out_dir):
-                            for file in os.listdir(out_dir):
-                                if file.endswith(".md"):
-                                    with open(os.path.join(out_dir, file), "r", encoding="utf-8") as f:
-                                        md_content = f.read()
-                                    break
-                        elif os.path.exists(os.path.join(temp_dir, base_name)):
-                            # Fallback in case mineru behavior changes and doesn't nest inside 'auto'
-                            for file in os.listdir(os.path.join(temp_dir, base_name)):
-                                if file.endswith(".md"):
-                                    with open(os.path.join(temp_dir, base_name, file), "r", encoding="utf-8") as f:
-                                        md_content = f.read()
-                                    break
-                        
-                        if md_content:
-                            logger.info(f"Successfully extracted {len(md_content)} chars using MinerU.")
-                            state["content"] = md_content
-                            if not state.get("title") and "file_path" in state and state["file_path"]:
-                                state["title"] = os.path.basename(state["file_path"])
-                            # Bypass content_core's Pydantic validation which only allows 'auto', 'simple', 'docling'
-                            state["document_engine"] = "auto"
-                            return ProcessSourceState(**state)
-                        else:
-                            logger.warning("MinerU failed to produce markdown output. Falling back to simple engine.")
-                            state["document_engine"] = "simple"
-                except Exception as e:
-                    logger.error(f"MinerU extraction failed: {e}. Falling back to simple engine.")
-                    state["document_engine"] = "simple"
-            elif engine == "mineru":
-                logger.warning("MinerU does not support this file type. Falling back to simple engine.")
-                state["document_engine"] = "simple"
-
-            # Create a new event loop for this thread to run the async function
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(extract_content(state))
-            finally:
-                loop.close()
-                
-        # 让 CPU 密集型任务在背景线程中运行，不阻塞主事件循环
-        processed_state = await asyncio.to_thread(_sync_extract, content_state)
+        processed_state = await extraction_service.process(content_state)
         logger.info(f"Content extraction completed for source_id={state.get('source_id')}")
         logger.debug(f"Extracted content length: {len(processed_state.content or '')} characters")
     except Exception as e:
@@ -247,16 +119,18 @@ async def transform_content(state: TransformationState) -> Optional[dict]:
     transformation: Transformation = state["transformation"]
 
     logger.info(f"Submitting background job for transformation {transformation.name}")
-    from surreal_commands import submit_command
-    submit_command(
+    from commands.lifecycle import submit_command_job
+
+    await submit_command_job(
         "open_notebook",
         "run_transformation",
         {
             "source_id": str(source.id),
             "transformation_id": str(transformation.id)
-        }
+        },
+        ensure_registered=False,
     )
-    
+
     return {
         "transformation": [
             {

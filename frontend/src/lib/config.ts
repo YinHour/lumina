@@ -15,9 +15,9 @@ let configPromise: Promise<AppConfig> | null = null
  * Get the API URL to use for requests.
  *
  * Priority:
- * 1. Runtime config from API server (/api/config endpoint)
+ * 1. Runtime config from Next.js server endpoint (/config)
  * 2. Environment variable (NEXT_PUBLIC_API_URL)
- * 3. Default fallback (http://localhost:5055)
+ * 3. Default fallback: relative path through Next.js rewrites
  */
 export async function getApiUrl(): Promise<string> {
   // If we already have config, return it
@@ -100,11 +100,11 @@ async function fetchConfig(): Promise<AppConfig> {
       console.log('🔧 [Config] Using relative path (rewrites) as default')
   }
 
-  // Priority: Explicit env var > Relative path (through Next.js rewrites)
+  // Priority: runtime config > explicit env var > relative path (through Next.js rewrites)
   // In local dev, always use relative path so the browser only needs to reach port 3000.
   // Next.js rewrites proxy /api/* to the backend internally (default: http://localhost:5055).
   // For production with a separate API domain, set NEXT_PUBLIC_API_URL explicitly.
-  const baseUrl = envApiUrl || ''
+  const baseUrl = runtimeApiUrl || envApiUrl || defaultApiUrl
   if (isDev) {
     console.log('🔧 [Config] Final base URL to try:', baseUrl)
     console.log('🔧 [Config] Selection priority: runtime=' + (runtimeApiUrl ? '✅' : '❌') +

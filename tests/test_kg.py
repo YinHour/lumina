@@ -1,4 +1,6 @@
 import asyncio
+
+import pytest
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,6 +11,10 @@ from open_notebook.graphs.knowledge_graph import graph as kg_graph
 from open_notebook.utils.logger_config import setup_logging
 
 setup_logging()
+
+
+pytestmark = pytest.mark.skip(reason="Manual integration test requires a running database and configured models")
+
 
 async def test_kg_extraction():
     print("Testing KG extraction...")

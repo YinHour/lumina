@@ -51,3 +51,18 @@ def extract_markitdown(state: Mapping[str, Any]) -> ProcessSourceState:
     # auto/simple/docling only, so reset after custom MarkItDown extraction.
     next_state["document_engine"] = "auto"
     return ProcessSourceState(**next_state)
+
+
+class MarkItDownExtractor:
+    name = "markitdown"
+
+    def supports(self, state: dict[str, Any]) -> bool:
+        return state.get("document_engine") == self.name
+
+    def extract(self, state: dict[str, Any]) -> ProcessSourceState | None:
+        file_path = state.get("file_path")
+        if file_path and is_markitdown_supported(file_path):
+            return extract_markitdown(state)
+
+        state["document_engine"] = "simple"
+        return None

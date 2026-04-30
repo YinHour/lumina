@@ -12,23 +12,15 @@ from loguru import logger
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from open_notebook.utils.logger_config import setup_logging
+
 setup_logging()
 
 # Monkey-patch ChatOpenAI to preserve DeepSeek reasoning_content across turns
 import api.deepseek_reasoning_patch  # noqa: E402
+
 api.deepseek_reasoning_patch.apply()
 
 from api.auth import PasswordAuthMiddleware
-from open_notebook.exceptions import (
-    AuthenticationError,
-    ConfigurationError,
-    ExternalServiceError,
-    InvalidInputError,
-    NetworkError,
-    NotFoundError,
-    OpenNotebookError,
-    RateLimitError,
-)
 from api.routers import (
     auth,
     chat,
@@ -53,6 +45,16 @@ from api.routers import (
 )
 from api.routers import commands as commands_router
 from open_notebook.database.async_migrate import AsyncMigrationManager
+from open_notebook.exceptions import (
+    AuthenticationError,
+    ConfigurationError,
+    ExternalServiceError,
+    InvalidInputError,
+    NetworkError,
+    NotFoundError,
+    OpenNotebookError,
+    RateLimitError,
+)
 from open_notebook.utils.encryption import get_secret_from_env
 
 # Import commands to register them in the API process
@@ -129,6 +131,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
+def _cors_origins_from_env() -> list[str]:
+    import os
+
+    raw_origins = os.getenv("OPEN_NOTEBOOK_CORS_ORIGINS", "*")
+    origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+    return origins or ["*"]
+
+
+def _cors_response_origin(request: Request) -> str:
+    allowed_origins = _cors_origins_from_env()
+    request_origin = request.headers.get("origin")
+    if "*" in allowed_origins:
+        return request_origin or "*"
+    if request_origin and request_origin in allowed_origins:
+        return request_origin
+    return allowed_origins[0]
+
 # Add password authentication middleware first
 # Exclude /api/auth/status and /api/config from authentication
 app.add_middleware(
@@ -149,7 +169,7 @@ app.add_middleware(
 # Add CORS middleware last (so it processes first)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, replace with specific origins
+    allow_origins=_cors_origins_from_env(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -168,14 +188,12 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
     FastAPI, this handler won't be called. In that case, configure your reverse proxy
     to add CORS headers to error responses.
     """
-    # Get the origin from the request
-    origin = request.headers.get("origin", "*")
-
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail},
         headers={
-            **(exc.headers or {}), "Access-Control-Allow-Origin": origin,
+            **(exc.headers or {}),
+            "Access-Control-Allow-Origin": _cors_response_origin(request),
             "Access-Control-Allow-Credentials": "true",
             "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
@@ -184,9 +202,8 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 
 def _cors_headers(request: Request) -> dict[str, str]:
-    origin = request.headers.get("origin", "*")
     return {
-        "Access-Control-Allow-Origin": origin,
+        "Access-Control-Allow-Origin": _cors_response_origin(request),
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Allow-Methods": "*",
         "Access-Control-Allow-Headers": "*",

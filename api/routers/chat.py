@@ -7,14 +7,15 @@ from langchain_core.runnables import RunnableConfig
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from open_notebook.config import LANGGRAPH_CHAT_CHECKPOINT_FILE
 from open_notebook.database.repository import ensure_record_id, repo_query
 from open_notebook.domain.notebook import ChatSession, Note, Notebook, Source
 from open_notebook.exceptions import (
     NotFoundError,
 )
-from open_notebook.graphs.chat import agent_state, graph as chat_graph
+from open_notebook.graphs.chat import agent_state
+from open_notebook.graphs.chat import graph as chat_graph
 from open_notebook.utils.graph_utils import get_session_message_count
-from open_notebook.config import LANGGRAPH_CHAT_CHECKPOINT_FILE
 
 router = APIRouter()
 

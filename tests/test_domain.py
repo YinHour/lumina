@@ -17,7 +17,7 @@ from open_notebook.domain.base import RecordModel
 from open_notebook.domain.content_settings import ContentSettings
 from open_notebook.domain.notebook import Asset, Note, Notebook, Source
 from open_notebook.domain.transformation import Transformation
-from open_notebook.exceptions import InvalidInputError
+from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
 from open_notebook.podcasts.models import EpisodeProfile, SpeakerProfile
 
 # ============================================================================
@@ -98,6 +98,52 @@ class TestNotebookDomain:
 
         notebook_archived = Notebook(name="Test", description="Test", archived=True)
         assert notebook_archived.archived is True
+
+    @pytest.mark.asyncio
+    async def test_notebook_delete_keeps_files_when_transaction_fails(self):
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp_file:
+            tmp_file.write(b"exclusive source")
+            tmp_path = Path(tmp_file.name)
+
+        notebook = Notebook(id="notebook:delete", name="Delete", description="")
+        exclusive_source = Source(
+            id="source:exclusive",
+            title="Exclusive",
+            asset=Asset(file_path=str(tmp_path)),
+        )
+
+        try:
+            with patch(
+                "open_notebook.domain.notebook.NotebookRepository.note_count",
+                new_callable=AsyncMock,
+                return_value=1,
+            ):
+                with patch(
+                    "open_notebook.domain.notebook.NotebookRepository.source_reference_counts",
+                    new_callable=AsyncMock,
+                    return_value=[
+                        {"id": "source:exclusive", "assigned_others": 0},
+                        {"id": "source:shared", "assigned_others": 1},
+                    ],
+                ):
+                    with patch.object(
+                        Source,
+                        "get",
+                        new_callable=AsyncMock,
+                        return_value=exclusive_source,
+                    ):
+                        with patch(
+                            "open_notebook.domain.notebook.NotebookRepository.delete_notebook_records_transaction",
+                            new_callable=AsyncMock,
+                            side_effect=RuntimeError("transaction failed"),
+                        ):
+                            with pytest.raises(DatabaseOperationError):
+                                await notebook.delete(delete_exclusive_sources=True)
+
+            assert tmp_path.exists()
+        finally:
+            if tmp_path.exists():
+                tmp_path.unlink()
 
 
 # ============================================================================
@@ -201,7 +247,6 @@ class TestSourceDomain:
             assert result is True
             mock_delete.assert_called_once()
 
-
     @pytest.mark.asyncio
     async def test_vectorize_raises_valueerror_when_no_text(self):
         """Test that vectorize() raises ValueError (not DatabaseOperationError) for empty text."""
@@ -231,9 +276,12 @@ class TestSourceDomain:
             "open_notebook.domain.notebook.submit_command", return_value="command:123"
         ) as mock_submit:
             result = await source.vectorize()
-            mock_submit.assert_called_once_with(
+            mock_submit.assert_any_call(
+                "open_notebook", "embed_source", {"source_id": "source:test_valid"}
+            )
+            mock_submit.assert_any_call(
                 "open_notebook",
-                "embed_source",
+                "extract_knowledge_graph",
                 {"source_id": "source:test_valid"},
             )
             assert result == "command:123"

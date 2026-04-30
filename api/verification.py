@@ -11,7 +11,7 @@ from typing import Optional
 
 from loguru import logger
 
-from api.email_service import send_verification_email, generate_code
+from api.email_service import generate_code, send_verification_email
 from open_notebook.database.repository import repo_query
 from open_notebook.utils.encryption import get_secret_from_env
 

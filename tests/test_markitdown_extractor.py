@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from open_notebook.content_extractors.markitdown import extract_markitdown, is_markitdown_supported
+from open_notebook.content_extractors.markitdown import (
+    extract_markitdown,
+    is_markitdown_supported,
+)
 
 
 def test_is_markitdown_supported_for_document_extensions():

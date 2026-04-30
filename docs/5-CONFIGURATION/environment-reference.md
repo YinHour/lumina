@@ -11,15 +11,86 @@ Comprehensive list of all environment variables available in Open Notebook.
 | `API_URL` | No | Auto-detected | URL where frontend reaches API (e.g., http://localhost:5055) |
 | `INTERNAL_API_URL` | No | http://localhost:5055 | Internal API URL for Next.js server-side proxying |
 | `API_CLIENT_TIMEOUT` | No | 300 | Client timeout in seconds (how long to wait for API response) |
+| `OPEN_NOTEBOOK_AUTH_MODE` | No | `auto` | API auth mode: `auto`, `none`, `password`, or `jwt`. Use `jwt` or `password` explicitly in production. |
 | `OPEN_NOTEBOOK_PASSWORD` | No | None | Legacy shared-password mode. If set, it takes priority over database JWT auth for protected API routes. |
 | `OPEN_NOTEBOOK_ENCRYPTION_KEY` | **Yes** | None | Secret string to encrypt credentials stored in database (any string works). **Required** for the credential system. Supports Docker secrets via `_FILE` suffix. |
-| `EMAIL_PROVIDER` | No | `smtp` | Verification email backend: `smtp`, `resend`, or `debug` for local testing |
+| `OPEN_NOTEBOOK_CORS_ORIGINS` | No | `*` | Comma-separated list of allowed browser origins for API CORS. Use explicit frontend origins in production. |
 | `ALLOW_PUBLIC_REGISTRATION` | No | `false` | Enable self-registration via `/register` |
-| `VERIFICATION_CODE_TTL_SECONDS` | No | `600` | Verification code expiry time in seconds |
-| `VERIFICATION_CODE_COOLDOWN_SECONDS` | No | `300` | Minimum wait between verification code sends for the same email/purpose |
 | `HOSTNAME` | No | `0.0.0.0` (in Docker) | Network interface for Next.js to bind to. Default `0.0.0.0` ensures accessibility from reverse proxies |
 
 > **Important**: `OPEN_NOTEBOOK_ENCRYPTION_KEY` is required for storing AI provider credentials via the Settings UI. Without it, you cannot save credentials. If you change or lose this key, all stored credentials become unreadable.
+
+---
+
+## Email Verification
+
+Open Notebook uses email verification for public registration and password reset.
+The API endpoint is `POST /api/auth/send-code`; successful codes are stored in
+SurrealDB as hashed records in the `verification_code` table.
+
+Email settings are read when the API process starts, so restart the API after
+changing any of these values.
+
+| Variable | Required? | Default | Description |
+|----------|-----------|---------|-------------|
+| `EMAIL_PROVIDER` | No | `smtp` | Verification email backend: `smtp`, `resend`, or `debug` |
+| `SMTP_HOST` | Required for `smtp` | `localhost` | SMTP server hostname |
+| `SMTP_PORT` | Required for `smtp` | `587` | SMTP server port. Port `465` uses implicit TLS (`SMTP_SSL`); other TLS ports use STARTTLS when `SMTP_USE_TLS=true` |
+| `SMTP_USER` | Usually for `smtp` | None | SMTP login username |
+| `SMTP_PASSWORD` | Usually for `smtp` | None | SMTP login password or app password |
+| `SMTP_FROM` | No | `SMTP_USER` or `noreply@lumina.ai` | Sender address used in outgoing verification emails and Resend payloads |
+| `SMTP_USE_TLS` | No | `true` | Whether to call STARTTLS for SMTP ports other than `465` |
+| `RESEND_API_KEY` | Required for `resend` | None | API key for Resend email delivery |
+| `APP_NAME` | No | `Lumina` | Product name shown in verification email subjects and templates |
+| `VERIFICATION_CODE_TTL_SECONDS` | No | `600` | Verification code expiry time in seconds |
+| `VERIFICATION_CODE_COOLDOWN_SECONDS` | No | `300` | Minimum wait between verification code sends for the same email/purpose |
+| `VERIFICATION_CODE_MAX_ATTEMPTS` | No | `5` | Maximum invalid verification attempts before a code is treated as expired |
+
+Supported providers:
+
+- `debug`: does not send real email. The verification code is written to the API log. Best for local development.
+- `smtp`: sends HTML email through the configured SMTP server.
+- `resend`: sends HTML email through the Resend API. `SMTP_FROM` is still used as the sender address.
+
+Examples:
+
+```bash
+# Local development: print codes in API logs
+EMAIL_PROVIDER=debug
+ALLOW_PUBLIC_REGISTRATION=true
+```
+
+```bash
+# SMTP with implicit TLS, common for port 465
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.example.com
+SMTP_PORT=465
+SMTP_USER=sender@example.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM=sender@example.com
+SMTP_USE_TLS=true
+```
+
+```bash
+# SMTP with STARTTLS, common for port 587
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=sender@example.com
+SMTP_PASSWORD=your-app-password
+SMTP_FROM=sender@example.com
+SMTP_USE_TLS=true
+```
+
+```bash
+# Resend
+EMAIL_PROVIDER=resend
+RESEND_API_KEY=re_...
+SMTP_FROM=verified-sender@example.com
+```
+
+For production, use a provider/domain that has SPF, DKIM, and DMARC configured,
+and keep `SMTP_PASSWORD` / `RESEND_API_KEY` out of committed files.
 
 ---
 
@@ -150,7 +221,9 @@ Then configure AI providers via **Settings → API Keys** in the browser.
 ### Production Deployment
 ```
 OPEN_NOTEBOOK_ENCRYPTION_KEY=your-strong-secret-key
+OPEN_NOTEBOOK_AUTH_MODE=jwt
 API_URL=https://mynotebook.example.com
+OPEN_NOTEBOOK_CORS_ORIGINS=https://mynotebook.example.com
 SURREAL_USER=production_user
 SURREAL_PASSWORD=***
 ```

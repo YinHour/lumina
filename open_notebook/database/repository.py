@@ -82,6 +82,18 @@ async def repo_query(
             raise
 
 
+async def repo_transaction(
+    query_body: str, vars: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """Execute a SurrealQL transaction body and return the results."""
+    query = f"""
+    BEGIN TRANSACTION;
+    {query_body}
+    COMMIT TRANSACTION;
+    """
+    return await repo_query(query, vars)
+
+
 async def repo_create(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
     """Create a new record in the specified table"""
     # Remove 'id' attribute if it exists in data

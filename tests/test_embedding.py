@@ -255,11 +255,15 @@ class TestGenerateEmbedding:
             result = await generate_embeddings(texts)
 
             assert len(result) == num_texts
-            # 120 texts / 50 batch size = 3 batches (50, 50, 20)
-            assert mock_model.aembed.call_count == 3
+            expected_batches = (
+                num_texts + EMBEDDING_BATCH_SIZE - 1
+            ) // EMBEDDING_BATCH_SIZE
+            assert mock_model.aembed.call_count == expected_batches
             assert len(mock_model.aembed.call_args_list[0][0][0]) == EMBEDDING_BATCH_SIZE
             assert len(mock_model.aembed.call_args_list[1][0][0]) == EMBEDDING_BATCH_SIZE
-            assert len(mock_model.aembed.call_args_list[2][0][0]) == 20
+            assert len(mock_model.aembed.call_args_list[-1][0][0]) == (
+                num_texts % EMBEDDING_BATCH_SIZE or EMBEDDING_BATCH_SIZE
+            )
 
     @pytest.mark.asyncio
     async def test_batch_retry_on_transient_failure(self):

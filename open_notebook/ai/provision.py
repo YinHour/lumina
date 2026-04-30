@@ -62,10 +62,10 @@ class _RateLimitRetryModel(BaseChatModel):
         if not model_name or not provider:
             return self.primary_model
 
-        from open_notebook.ai.key_provider import provision_provider_keys
-
         # Provision the provider (this will set env vars from DB, then we override with fallback)
         import asyncio
+
+        from open_notebook.ai.key_provider import provision_provider_keys
         asyncio.run(provision_provider_keys(provider.replace("-", "_")))
 
         # Override with fallback key

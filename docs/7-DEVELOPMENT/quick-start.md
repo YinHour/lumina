@@ -44,6 +44,9 @@ EMAIL_PROVIDER=debug
 ALLOW_PUBLIC_REGISTRATION=true
 ```
 
+For real SMTP or Resend delivery, see
+[Email Verification](../5-CONFIGURATION/environment-reference.md#email-verification).
+
 ## 4. Verify Everything Works (instant)
 
 - **API Health**: http://localhost:5055/health → should return `{"status": "healthy"}`

@@ -11,7 +11,7 @@ from api.models import (
     NotebookUpdate,
     NotebookVisibilityUpdate,
 )
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repositories.notebook_repository import NotebookRepository
 from open_notebook.domain.notebook import Notebook, Source
 from open_notebook.exceptions import InvalidInputError
 
@@ -35,7 +35,9 @@ def _notebook_to_response(nb: dict) -> NotebookResponse:
     )
 
 
-def _check_notebook_access(nb: dict, user_id: Optional[str], require_owner: bool = False) -> bool:
+def _check_notebook_access(
+    nb: dict, user_id: Optional[str], require_owner: bool = False
+) -> bool:
     """Check notebook access.
 
     - Read access: public notebooks or owner-only private notebooks.
@@ -54,6 +56,31 @@ def _check_notebook_access(nb: dict, user_id: Optional[str], require_owner: bool
     return False
 
 
+def _validate_notebook_order_by(order_by: str) -> str:
+    allowed_fields = {"name", "created", "updated"}
+    allowed_directions = {"asc", "desc"}
+
+    parts = order_by.strip().lower().split()
+    if len(parts) == 1:
+        if parts[0] not in allowed_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid order_by field: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}",
+            )
+        return parts[0]
+    if len(parts) == 2:
+        if parts[0] not in allowed_fields or parts[1] not in allowed_directions:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid order_by: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}. Allowed directions: asc, desc",
+            )
+        return f"{parts[0]} {parts[1]}"
+    raise HTTPException(
+        status_code=400,
+        detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
+    )
+
+
 @router.get("/notebooks", response_model=List[NotebookResponse])
 async def get_notebooks(
     request: Request,
@@ -67,54 +94,12 @@ async def get_notebooks(
     user_id: Optional[str] = getattr(request.state, "user_id", None)
 
     try:
-        # Validate order_by against allowlist to prevent SurrealQL injection
-        allowed_fields = {"name", "created", "updated"}
-        allowed_directions = {"asc", "desc"}
-
-        parts = order_by.strip().lower().split()
-        if len(parts) == 1:
-            if parts[0] not in allowed_fields:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid order_by field: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}",
-                )
-            validated_order_by = parts[0]
-        elif len(parts) == 2:
-            if parts[0] not in allowed_fields or parts[1] not in allowed_directions:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid order_by: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}. Allowed directions: asc, desc",
-                )
-            validated_order_by = f"{parts[0]} {parts[1]}"
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
-            )
-
-        # Build visibility filter
-        if user_id:
-            # Authenticated: see own notebooks (any visibility) + all public notebooks
-            visibility_filter = "(owner_id = $user_id) OR (visibility = 'public')"
-        else:
-            # Anonymous: only public notebooks
-            visibility_filter = "(visibility = 'public')"
-
-        # Build the query with counts
-        query = f"""
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM notebook
-            WHERE {visibility_filter}
-            ORDER BY {validated_order_by}
-        """
-
-        result = await repo_query(query, {"user_id": ensure_record_id(user_id)} if user_id else {})
-
-        # Filter by archived status if specified
-        if archived is not None:
-            result = [nb for nb in result if nb.get("archived") == archived]
+        validated_order_by = _validate_notebook_order_by(order_by)
+        result = await NotebookRepository.list_notebooks(
+            user_id=user_id,
+            archived=archived,
+            order_by=validated_order_by,
+        )
 
         return [_notebook_to_response(nb) for nb in result]
     except HTTPException:
@@ -133,44 +118,13 @@ async def get_public_notebooks(
 ):
     """Browse public notebooks without authentication."""
     try:
-        # Validate order_by (same as get_notebooks)
-        allowed_fields = {"name", "created", "updated"}
-        allowed_directions = {"asc", "desc"}
-
-        parts = order_by.strip().lower().split()
-        if len(parts) == 1:
-            if parts[0] not in allowed_fields:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid order_by field: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}",
-                )
-            validated_order_by = parts[0]
-        elif len(parts) == 2:
-            if parts[0] not in allowed_fields or parts[1] not in allowed_directions:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid order_by: '{order_by}'. Allowed fields: {', '.join(sorted(allowed_fields))}. Allowed directions: asc, desc",
-                )
-            validated_order_by = f"{parts[0]} {parts[1]}"
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid order_by format: '{order_by}'. Expected 'field' or 'field direction'",
-            )
-
-        query = f"""
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM notebook
-            WHERE visibility = 'public'
-            ORDER BY {validated_order_by}
-        """
-
-        result = await repo_query(query)
-
-        if archived is not None:
-            result = [nb for nb in result if nb.get("archived") == archived]
+        validated_order_by = _validate_notebook_order_by(order_by)
+        result = await NotebookRepository.list_notebooks(
+            user_id=None,
+            archived=archived,
+            order_by=validated_order_by,
+            public_only=True,
+        )
 
         return [_notebook_to_response(nb) for nb in result]
     except HTTPException:
@@ -262,19 +216,9 @@ async def get_notebook(request: Request, notebook_id: str):
     """Get a specific notebook by ID. Requires ownership (private) or public."""
     user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
-        # Query with counts for single notebook
-        query = """
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM $notebook_id
-        """
-        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
-
-        if not result:
+        nb = await NotebookRepository.get_with_counts(notebook_id)
+        if not nb:
             raise HTTPException(status_code=404, detail="Notebook not found")
-
-        nb = result[0]
 
         if not _check_notebook_access(nb, user_id):
             raise HTTPException(status_code=403, detail="Access denied")
@@ -290,7 +234,9 @@ async def get_notebook(request: Request, notebook_id: str):
 
 
 @router.put("/notebooks/{notebook_id}", response_model=NotebookResponse)
-async def update_notebook(request: Request, notebook_id: str, notebook_update: NotebookUpdate):
+async def update_notebook(
+    request: Request, notebook_id: str, notebook_update: NotebookUpdate
+):
     """Update a notebook. Requires ownership."""
     user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
@@ -299,7 +245,11 @@ async def update_notebook(request: Request, notebook_id: str, notebook_update: N
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         # Ownership check
-        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+        if not _check_notebook_access(
+            {"owner_id": notebook.owner_id, "visibility": notebook.visibility},
+            user_id,
+            require_owner=True,
+        ):
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Update only provided fields
@@ -318,17 +268,8 @@ async def update_notebook(request: Request, notebook_id: str, notebook_update: N
 
         await notebook.save()
 
-        # Query with counts after update
-        query = """
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM $notebook_id
-        """
-        result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
-
-        if result:
-            nb = result[0]
+        nb = await NotebookRepository.get_with_counts(notebook_id)
+        if nb:
             return _notebook_to_response(nb)
 
         # Fallback if query fails
@@ -358,9 +299,7 @@ async def update_notebook(request: Request, notebook_id: str, notebook_update: N
 
 
 @router.patch("/notebooks/{notebook_id}/visibility", response_model=NotebookResponse)
-async def update_notebook_visibility(
-    request: Request, notebook_id: str
-):
+async def update_notebook_visibility(request: Request, notebook_id: str):
     """Make a private notebook public. One-way only — cannot revert to private.
 
     Requires ownership. Returns the updated notebook.
@@ -379,30 +318,22 @@ async def update_notebook_visibility(
             user_id,
             require_owner=True,
         ):
-            raise HTTPException(status_code=403, detail="Access denied — you do not own this notebook")
+            raise HTTPException(
+                status_code=403, detail="Access denied — you do not own this notebook"
+            )
 
         if notebook.visibility == "public":
             raise HTTPException(
                 status_code=400,
-                detail="Notebook is already public. Making a notebook private is not supported."
+                detail="Notebook is already public. Making a notebook private is not supported.",
             )
 
         notebook.visibility = "public"
         await notebook.save()
 
-        # Query with counts after update
-        query = """
-            SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
-            FROM $notebook_id
-        """
-        result = await repo_query(
-            query, {"notebook_id": ensure_record_id(notebook_id)}
-        )
-
-        if result:
-            return _notebook_to_response(result[0])
+        nb = await NotebookRepository.get_with_counts(notebook_id)
+        if nb:
+            return _notebook_to_response(nb)
 
         return NotebookResponse(
             id=notebook.id or "",
@@ -421,9 +352,7 @@ async def update_notebook_visibility(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(
-            f"Error updating notebook visibility {notebook_id}: {str(e)}"
-        )
+        logger.error(f"Error updating notebook visibility {notebook_id}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Error updating notebook visibility: {str(e)}",
@@ -441,7 +370,11 @@ async def add_source_to_notebook(request: Request, notebook_id: str, source_id: 
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         # Ownership check
-        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+        if not _check_notebook_access(
+            {"owner_id": notebook.owner_id, "visibility": notebook.visibility},
+            user_id,
+            require_owner=True,
+        ):
             raise HTTPException(status_code=403, detail="Access denied")
 
         # Check if source exists
@@ -449,24 +382,7 @@ async def add_source_to_notebook(request: Request, notebook_id: str, source_id: 
         if not source:
             raise HTTPException(status_code=404, detail="Source not found")
 
-        # Check if reference already exists (idempotency)
-        existing_ref = await repo_query(
-            "SELECT * FROM reference WHERE out = $source_id AND in = $notebook_id",
-            {
-                "notebook_id": ensure_record_id(notebook_id),
-                "source_id": ensure_record_id(source_id),
-            },
-        )
-
-        # If reference doesn't exist, create it
-        if not existing_ref:
-            await repo_query(
-                "RELATE $source_id->reference->$notebook_id",
-                {
-                    "notebook_id": ensure_record_id(notebook_id),
-                    "source_id": ensure_record_id(source_id),
-                },
-            )
+        await NotebookRepository.link_source(notebook_id, source_id)
 
         return {"message": "Source linked to notebook successfully"}
     except HTTPException:
@@ -481,7 +397,9 @@ async def add_source_to_notebook(request: Request, notebook_id: str, source_id: 
 
 
 @router.delete("/notebooks/{notebook_id}/sources/{source_id}")
-async def remove_source_from_notebook(request: Request, notebook_id: str, source_id: str):
+async def remove_source_from_notebook(
+    request: Request, notebook_id: str, source_id: str
+):
     """Remove a source from a notebook (delete the reference). Requires notebook ownership."""
     user_id: Optional[str] = getattr(request.state, "user_id", None)
     try:
@@ -491,17 +409,14 @@ async def remove_source_from_notebook(request: Request, notebook_id: str, source
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         # Ownership check
-        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+        if not _check_notebook_access(
+            {"owner_id": notebook.owner_id, "visibility": notebook.visibility},
+            user_id,
+            require_owner=True,
+        ):
             raise HTTPException(status_code=403, detail="Access denied")
 
-        # Delete the reference record linking source to notebook
-        await repo_query(
-            "DELETE FROM reference WHERE out = $notebook_id AND in = $source_id",
-            {
-                "notebook_id": ensure_record_id(notebook_id),
-                "source_id": ensure_record_id(source_id),
-            },
-        )
+        await NotebookRepository.unlink_source(notebook_id, source_id)
 
         return {"message": "Source removed from notebook successfully"}
     except HTTPException:
@@ -532,10 +447,16 @@ async def delete_notebook(
             raise HTTPException(status_code=404, detail="Notebook not found")
 
         # Ownership check
-        if not _check_notebook_access({"owner_id": notebook.owner_id, "visibility": notebook.visibility}, user_id, require_owner=True):
+        if not _check_notebook_access(
+            {"owner_id": notebook.owner_id, "visibility": notebook.visibility},
+            user_id,
+            require_owner=True,
+        ):
             raise HTTPException(status_code=403, detail="Access denied")
 
-        result = await notebook.delete(delete_exclusive_sources=delete_exclusive_sources)
+        result = await notebook.delete(
+            delete_exclusive_sources=delete_exclusive_sources
+        )
 
         return NotebookDeleteResponse(
             message="Notebook deleted successfully",

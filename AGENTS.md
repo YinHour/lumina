@@ -107,11 +107,19 @@ User documentation is at @docs/
 - **Automatic migrations**: AsyncMigrationManager runs on API startup
 - **SurrealDB graph model**: Records with relationships and embeddings
 - **Vector search**: Built-in semantic search across all content
-- **Transactions**: Repo functions handle ACID operations
+- **Repository boundary**: New SurrealQL belongs in named repositories under `open_notebook/database/repositories/`
+- **Transactions**: Multi-record changes should use repository transaction helpers
 
 ### 5. Authentication
-- **Current**: Simple password middleware (insecure, dev-only)
-- **Production**: Replace with OAuth/JWT (see CONFIGURATION.md)
+- **Modes**: `OPEN_NOTEBOOK_AUTH_MODE=auto|none|password|jwt`
+- **Production**: Prefer JWT/database users and explicit CORS origins (see CONFIGURATION.md)
+
+### 6. Backend Boundaries
+- Routers handle HTTP semantics: auth, parsing, status codes, response models.
+- Application services in `api/services/` orchestrate use cases and command submission.
+- Domain objects express business rules and delegate named queries to repositories.
+- Do not add new backend-internal HTTP self-calls through `api_client`; root-level `api/*_service.py` modules are compatibility wrappers.
+- Long-running work should return a command/job status instead of blocking the HTTP request.
 
 ---
 
@@ -138,7 +146,9 @@ User documentation is at @docs/
 - **TTS failures**: Fall back to silent audio if speech synthesis fails
 
 ### Content Processing
-- **File extraction**: Uses content-core library; supports 50+ file types
+- **File extraction**: Goes through `ContentExtractionService`
+- **Custom extractors**: MarkItDown and MinerU live in `open_notebook/content_extractors/`
+- **Fallback**: Unsupported or failed custom extractors fall back to content-core/simple extraction
 - **URL handling**: Extracts text + metadata from web pages
 - **Large files**: Content processing is sync; may block API briefly
 
@@ -182,7 +192,7 @@ See dedicated AGENTS.md files for detailed guidance:
 
 ### Add a New API Endpoint
 1. Create router in `api/routers/feature.py`
-2. Create service in `api/feature_service.py`
+2. Create service/use-case logic in `api/services/feature_service.py`
 3. Define schemas in `api/models.py`
 4. Register router in `api/main.py`
 5. Test via http://localhost:5055/docs
@@ -215,4 +225,3 @@ See dedicated AGENTS.md files for detailed guidance:
 - **Discord**: https://discord.gg/37XJPXfz2w
 - **Issues**: https://github.com/lfnovo/open-notebook/issues
 - **License**: MIT (see LICENSE)
-

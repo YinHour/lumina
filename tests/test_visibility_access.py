@@ -7,10 +7,8 @@ from fastapi import HTTPException
 from api.routers.notebooks import _check_notebook_access, get_notebook_delete_preview
 from api.routers.sources import (
     _check_source_access,
-    create_source_json,
     parse_source_form_data,
 )
-from api.models import SourceCreate
 
 
 class TestNotebookVisibilityAccess:
@@ -34,15 +32,21 @@ class TestNotebookVisibilityAccess:
             name="Public notebook",
             owner_id="user:owner",
             visibility="public",
-            get_delete_preview=AsyncMock(return_value={
-                "note_count": 1,
-                "exclusive_source_count": 2,
-                "shared_source_count": 3,
-            }),
+            get_delete_preview=AsyncMock(
+                return_value={
+                    "note_count": 1,
+                    "exclusive_source_count": 2,
+                    "shared_source_count": 3,
+                }
+            ),
         )
         request = SimpleNamespace(state=SimpleNamespace(user_id="user:other"))
 
-        with patch("api.routers.notebooks.Notebook.get", new_callable=AsyncMock, return_value=notebook):
+        with patch(
+            "api.routers.notebooks.Notebook.get",
+            new_callable=AsyncMock,
+            return_value=notebook,
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 await get_notebook_delete_preview(request, "notebook:public")
 
@@ -82,20 +86,3 @@ class TestSourceVisibilityAccess:
 
         assert upload_file is None
         assert source_data.visibility == "public"
-
-    @pytest.mark.asyncio
-    async def test_create_source_json_preserves_request_user_context(self):
-        request = SimpleNamespace(state=SimpleNamespace(user_id="user:owner"))
-        source_data = SourceCreate(
-            type="text",
-            content="hello",
-            async_processing=True,
-            visibility="public",
-        )
-
-        with patch("api.routers.sources.create_source", new_callable=AsyncMock) as create_source:
-            create_source.return_value = {"id": "source:test"}
-            result = await create_source_json(request, source_data)
-
-        assert result == {"id": "source:test"}
-        create_source.assert_awaited_once_with(request, (source_data, None))

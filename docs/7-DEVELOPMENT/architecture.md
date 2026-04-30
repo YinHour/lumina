@@ -111,9 +111,12 @@ FastAPI App (main.py)
   │   └── routers/*.py (11 additional routers)
   │
   ├── Services (business logic)
-  │   ├── *_service.py (orchestration, graph invocation)
+  │   ├── services/*.py (application use cases and orchestration)
   │   ├── command_service.py (async job submission)
   │   └── middleware (auth, logging)
+  │
+  ├── Repositories (named database queries)
+  │   └── open_notebook/database/repositories/*.py
   │
   ├── Models (Pydantic schemas)
   │   └── models.py (validation, serialization)
@@ -145,6 +148,18 @@ HTTP Request → Router → Service → Domain/Repository → SurrealDB
                                        ↓
 Response ← Pydantic serialization ← Service ← Result
 ```
+
+New backend code should follow this path. Older modules such as `api/client.py`
+and root-level `api/*_service.py` are compatibility clients for legacy callers;
+do not add new API-internal HTTP self-calls through `api_client`.
+
+Current compatibility-only `api_client` wrappers:
+`context_service.py`, `embedding_service.py`, `episode_profiles_service.py`,
+`insights_service.py`, `models_service.py`, `notebook_service.py`,
+`notes_service.py`, `podcast_api_service.py`, `search_service.py`,
+`settings_service.py`, `sources_service.py`, and `transformations_service.py`.
+These modules should not be used as a landing zone for new API behavior; prefer
+`api/services/`, domain methods, or repository methods.
 
 ---
 
@@ -279,7 +294,10 @@ LangGraph is a state machine library that orchestrates multi-step AI workflows. 
 ```
 Input (file/URL/text)
   ↓
-Extract Content (content-core library)
+Extract Content (ContentExtractionService)
+  ├─ MarkItDown extractor when configured and supported
+  ├─ MinerU extractor when configured and supported
+  └─ content-core default fallback
   ↓
 Clean & tokenize text
   ↓
@@ -306,7 +324,8 @@ Output (Source record with embeddings)
 }
 ```
 
-**Invoked By**: Sources API (`POST /sources`)
+**Invoked By**: Sources API (`POST /sources`), submitted as a background
+`process_source` command.
 
 ---
 
@@ -520,10 +539,14 @@ result = await graph.ainvoke(
 
 **Repository Pattern**:
 - Database access layer (`open_notebook/database/repository.py`)
+- Named repositories (`open_notebook/database/repositories/*.py`)
 - `repo_query()`: Execute SurrealQL queries
+- `repo_transaction()`: Execute multi-record changes in one SurrealQL transaction
 - `repo_create()`: Insert records
 - `repo_upsert()`: Merge records
 - `repo_delete()`: Remove records
+- New source/notebook/search behavior should use named repository methods rather
+  than scattering raw SurrealQL in routers or domain objects.
 
 **Entity Methods**:
 ```python
@@ -563,7 +586,7 @@ async def create_source(source_data: SourceCreate):
 Services orchestrate domain objects, repositories, and workflows:
 
 ```python
-# api/notebook_service.py
+# api/services/notebook_service.py
 class NotebookService:
     async def get_notebook_with_stats(notebook_id: str):
         notebook = await Notebook.get(notebook_id)
@@ -577,10 +600,21 @@ class NotebookService:
 ```
 
 **Responsibilities**:
-- Validate inputs (Pydantic)
-- Orchestrate database operations
-- Invoke workflows (LangGraph graphs)
-- Handle errors and return appropriate status codes
+- Orchestrate use cases without FastAPI request/response objects
+- Call repositories for named database queries
+- Invoke workflows (LangGraph graphs) or submit background commands
+- Return domain objects, dataclasses, or Pydantic-compatible data
+
+**Non-responsibilities**:
+- Raise `HTTPException`
+- Return FastAPI `Response` objects
+- Call this API through `api_client`
+
+Routers remain responsible for:
+- Validate HTTP request inputs (Pydantic)
+- Enforce route-level auth and access checks
+- Map application errors to HTTP status codes
+- Serialize response models
 - Log operations
 
 ### 4. **Streaming Pattern**
@@ -598,18 +632,20 @@ async def ask(request: AskRequest):
 
 ### 5. **Job Queue Pattern**
 
-For async background tasks (source processing), use Surreal-Commands job queue:
+For async background tasks (source processing, embedding, transformations,
+knowledge graph extraction, and podcast generation), use `CommandService`.
+Routes should submit work and return immediately; clients poll command status
+instead of holding the HTTP request open.
 
 ```python
 # Submit job
-command_id = await CommandService.submit_command_job(
-    app="open_notebook",
-    command="process_source",
-    input={...}
+job_id = await CommandService.submit_command_job(
+    command_name="process_source",
+    input_data={...},
 )
 
 # Poll status
-status = await source.get_status()
+status = await CommandService.get_command_status(job_id)
 ```
 
 ---
@@ -642,10 +678,11 @@ const source = await response.json();
 
 **Example**:
 ```python
-# API
-result = await repo_query(
-    "SELECT * FROM source WHERE notebook = $notebook_id",
-    {"notebook_id": ensure_record_id(notebook_id)}
+# API/service/domain code
+sources = await SourceRepository.list_for_notebook(
+    notebook_id=notebook_id,
+    limit=50,
+    offset=0,
 )
 ```
 
@@ -667,17 +704,18 @@ response = await model.ainvoke({"input": prompt})
 
 1. **Async job submission**
 2. **Fire-and-forget pattern**
-3. **Status polling via `/commands/{id}` endpoint**
+3. **Status polling via `/api/commands/jobs/{job_id}` endpoint**
 4. **Job completion callbacks (optional)**
 
 **Example**:
 ```python
 # Submit async source processing
-command_id = await CommandService.submit_command_job(...)
+job_id = await CommandService.submit_command_job(...)
 
 # Client polls status
-response = await fetch(f"http://localhost:5055/commands/{command_id}")
-status = await response.json()  # returns { status: "running|queued|completed|failed" }
+response = await fetch(f"http://localhost:5055/api/commands/jobs/{job_id}")
+status = await response.json()
+# returns { job_id, command_id, status, result, error_message }
 ```
 
 ---

@@ -54,16 +54,19 @@ async def _check_has_users() -> bool:
 class PasswordAuthMiddleware(BaseHTTPMiddleware):
     """
     Middleware for password authentication with dual-mode support:
+    - none mode: no authentication, for local development only
     - Legacy mode: OPEN_NOTEBOOK_PASSWORD env var (plain text comparison)
     - Database mode: JWT tokens validated against app_user table
+    - auto mode: legacy password if configured, otherwise JWT if users exist
 
-    If legacy password is set, it takes priority (backward compatibility).
-    If no legacy password but users exist in DB, JWT validation is required.
+    Configure with OPEN_NOTEBOOK_AUTH_MODE=none|password|jwt|auto.
+    The default is auto for backward compatibility.
     """
 
     def __init__(self, app, excluded_paths: Optional[list] = None):
         super().__init__(app)
         self.legacy_password = get_secret_from_env("OPEN_NOTEBOOK_PASSWORD")
+        self.auth_mode = self._get_auth_mode()
         self.excluded_paths = excluded_paths or [
             "/",
             "/health",
@@ -71,6 +74,17 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
             "/openapi.json",
             "/redoc",
         ]
+
+    def _get_auth_mode(self) -> str:
+        import os
+
+        auth_mode = os.getenv("OPEN_NOTEBOOK_AUTH_MODE", "auto").strip().lower()
+        if auth_mode not in {"none", "password", "jwt", "auto"}:
+            logger.warning(
+                f"Invalid OPEN_NOTEBOOK_AUTH_MODE={auth_mode!r}; falling back to auto"
+            )
+            return "auto"
+        return auth_mode
 
     async def dispatch(self, request: Request, call_next):
         # Skip for excluded paths
@@ -87,8 +101,23 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
 
         auth_header = request.headers.get("Authorization")
 
+        if self.auth_mode == "none":
+            request.state.user_id = None
+            request.state.username = None
+            return await call_next(request)
+
         # --- Legacy mode: env var password ---
-        if self.legacy_password:
+        if self.auth_mode == "password" or (
+            self.auth_mode == "auto" and self.legacy_password
+        ):
+            if self.auth_mode == "password" and not self.legacy_password:
+                return JSONResponse(
+                    status_code=500,
+                    content={
+                        "detail": "OPEN_NOTEBOOK_AUTH_MODE=password requires OPEN_NOTEBOOK_PASSWORD"
+                    },
+                )
+
             if not auth_header:
                 return JSONResponse(
                     status_code=401,
@@ -125,9 +154,11 @@ class PasswordAuthMiddleware(BaseHTTPMiddleware):
             )
 
         # --- Database mode: JWT validation ---
-        has_users = await _check_has_users()
-        if not has_users:
+        has_users = True if self.auth_mode == "jwt" else await _check_has_users()
+        if self.auth_mode == "auto" and not has_users:
             # No users and no legacy password = no auth required
+            request.state.user_id = None
+            request.state.username = None
             return await call_next(request)
 
         # Users exist - require JWT

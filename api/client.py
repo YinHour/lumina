@@ -3,6 +3,7 @@ API client for Open Notebook API.
 This module provides a client interface to interact with the Open Notebook API.
 """
 
+import json
 import os
 from typing import Any, Dict, List, Optional, Union
 
@@ -381,14 +382,13 @@ class APIClient:
         """Create a new source."""
         data = {
             "type": source_type,
-            "embed": embed,
-            "delete_source": delete_source,
-            "async_processing": async_processing,
+            "embed": str(embed).lower(),
+            "delete_source": str(delete_source).lower(),
+            "async_processing": str(async_processing).lower(),
         }
 
-        # Handle backward compatibility for notebook_id vs notebooks
         if notebooks:
-            data["notebooks"] = notebooks
+            data["notebooks"] = json.dumps(notebooks)
         elif notebook_id:
             data["notebook_id"] = notebook_id
         else:
@@ -403,11 +403,10 @@ class APIClient:
         if title:
             data["title"] = title
         if transformations:
-            data["transformations"] = transformations
+            data["transformations"] = json.dumps(transformations)
 
-        # Use configured timeout for source creation (especially PDF processing with OCR)
         return self._make_request(
-            "POST", "/api/sources/json", json=data, timeout=self.timeout
+            "POST", "/api/sources", data=data, timeout=self.timeout
         )
 
     def get_source(self, source_id: str) -> Union[Dict[Any, Any], List[Dict[Any, Any]]]:

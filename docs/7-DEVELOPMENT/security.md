@@ -140,19 +140,28 @@ Never pass user-provided file paths directly to file reading or content extracti
 
 Open Notebook currently uses dual-mode middleware (`PasswordAuthMiddleware`):
 
+- Configurable mode via `OPEN_NOTEBOOK_AUTH_MODE=auto|none|password|jwt`
 - Legacy shared-password mode via `OPEN_NOTEBOOK_PASSWORD`
 - Preferred database-backed username/password login with JWT bearer tokens
 
 For production and maintained local development flows:
 
 - Prefer database users + JWT sessions
+- Set `OPEN_NOTEBOOK_AUTH_MODE=jwt` once an admin user exists
 - Treat `OPEN_NOTEBOOK_PASSWORD` as backward-compatibility mode
+- Use `OPEN_NOTEBOOK_AUTH_MODE=none` only for isolated local development
 - Change the encryption key (`OPEN_NOTEBOOK_ENCRYPTION_KEY`)
 - Consider deploying behind a reverse proxy with proper authentication (OAuth, OIDC)
 
 ### CORS
 
-The default CORS configuration allows all origins (`allow_origins=["*"]`). This is tracked for improvement in [#730](https://github.com/lfnovo/open-notebook/issues/730). For production deployments, restrict origins to only the frontend URL.
+The default CORS configuration allows all origins for local development. For production deployments, set `OPEN_NOTEBOOK_CORS_ORIGINS` to a comma-separated list of trusted frontend origins:
+
+```bash
+OPEN_NOTEBOOK_CORS_ORIGINS=https://notebook.example.com,https://www.notebook.example.com
+```
+
+When the frontend and API are served behind the same reverse proxy origin, prefer the relative `/api/*` proxy path and set CORS to the public frontend origin.
 
 ---
 

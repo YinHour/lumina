@@ -65,6 +65,10 @@ DEBUG=true
 LOG_LEVEL=DEBUG
 ```
 
+Use `EMAIL_PROVIDER=debug` for local auth testing. For real SMTP or Resend
+delivery, see
+[Email Verification](../5-CONFIGURATION/environment-reference.md#email-verification).
+
 ### AI Provider Configuration
 
 After starting the API and frontend, configure your AI provider via the Settings UI:

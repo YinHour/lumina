@@ -26,6 +26,7 @@ import bcrypt
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import asyncio
+
 from open_notebook.database.repository import db_connection, parse_record_ids
 
 

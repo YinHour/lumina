@@ -77,6 +77,10 @@ cp .env.example .env
 # ALLOW_PUBLIC_REGISTRATION=true
 ```
 
+Use `EMAIL_PROVIDER=debug` to print verification codes in the API log. For real
+SMTP or Resend delivery, see
+[Email Verification](../5-CONFIGURATION/environment-reference.md#email-verification).
+
 After starting the app, configure AI providers via the **Settings → API Keys** UI in the browser.
 
 ### 6. Start API

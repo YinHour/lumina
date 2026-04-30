@@ -4,11 +4,11 @@ Supports SMTP and Resend API backends.
 """
 
 import os
-import smtplib
 import random
+import smtplib
 import string
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Optional
 
 from loguru import logger
@@ -155,8 +155,8 @@ def send_email_resend(to: str, subject: str, html_body: str) -> bool:
         return False
 
     try:
-        import urllib.request
         import json
+        import urllib.request
 
         data = json.dumps({
             "from": SMTP_FROM,

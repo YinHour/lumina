@@ -8,7 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from surreal_commands import submit_command
 from surrealdb import RecordID
 
-from open_notebook.database.repository import ensure_record_id, repo_query
+from open_notebook.database.repositories.notebook_repository import NotebookRepository
+from open_notebook.database.repositories.search_repository import SearchRepository
+from open_notebook.database.repositories.source_repository import SourceRepository
+from open_notebook.database.repository import ensure_record_id
 from open_notebook.domain.base import ObjectModel
 from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
 
@@ -40,15 +43,7 @@ class Notebook(ObjectModel):
 
     async def get_sources(self) -> List["Source"]:
         try:
-            srcs = await repo_query(
-                """
-                select * omit source.full_text from (
-                select in as source from reference where out=$id
-                fetch source
-            ) order by source.updated desc
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
+            srcs = await NotebookRepository.source_rows(str(self.id))
             return [Source(**src["source"]) for src in srcs] if srcs else []
         except Exception as e:
             logger.error(f"Error fetching sources for notebook {self.id}: {str(e)}")
@@ -57,15 +52,7 @@ class Notebook(ObjectModel):
 
     async def get_notes(self) -> List["Note"]:
         try:
-            srcs = await repo_query(
-                """
-            select * omit note.content, note.embedding from (
-                select in as note from artifact where out=$id
-                fetch note
-            ) order by note.updated desc
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
+            srcs = await NotebookRepository.note_rows(str(self.id))
             return [Note(**src["note"]) for src in srcs] if srcs else []
         except Exception as e:
             logger.error(f"Error fetching notes for notebook {self.id}: {str(e)}")
@@ -74,19 +61,7 @@ class Notebook(ObjectModel):
 
     async def get_chat_sessions(self) -> List["ChatSession"]:
         try:
-            srcs = await repo_query(
-                """
-                select * from (
-                    select
-                    <- chat_session as chat_session
-                    from refers_to
-                    where out=$id
-                    fetch chat_session
-                )
-                order by chat_session.updated desc
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
+            srcs = await NotebookRepository.chat_session_rows(str(self.id))
             return (
                 [ChatSession(**src["chat_session"][0]) for src in srcs] if srcs else []
             )
@@ -107,26 +82,9 @@ class Notebook(ObjectModel):
         - shared_source_count: Sources in other notebooks (will be unlinked only)
         """
         try:
-            notebook_id = ensure_record_id(self.id)
-
-            # Count notes
-            note_result = await repo_query(
-                "SELECT count() as count FROM artifact WHERE out = $notebook_id GROUP ALL",
-                {"notebook_id": notebook_id},
-            )
-            note_count = note_result[0]["count"] if note_result else 0
-
-            # Get sources with count of references to OTHER notebooks
-            # If assigned_others = 0, source is exclusive to this notebook
-            # If assigned_others > 0, source is shared with other notebooks
-            source_counts = await repo_query(
-                """
-                SELECT
-                    id,
-                    count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
-                """,
-                {"notebook_id": notebook_id},
+            note_count = await NotebookRepository.note_count(str(self.id))
+            source_counts = await NotebookRepository.source_reference_counts(
+                str(self.id)
             )
 
             exclusive_count = 0
@@ -162,81 +120,56 @@ class Notebook(ObjectModel):
             raise InvalidInputError("Cannot delete notebook without an ID")
 
         try:
-            notebook_id = ensure_record_id(self.id)
-            deleted_notes = 0
-            deleted_sources = 0
-            unlinked_sources = 0
+            deleted_notes = await NotebookRepository.note_count(str(self.id))
+            exclusive_source_ids: list[str] = []
+            exclusive_file_paths: list[Path] = []
 
-            # 1. Get and delete all notes linked to this notebook
-            notes = await self.get_notes()
-            for note in notes:
-                await note.delete()
-                deleted_notes += 1
-            logger.info(f"Deleted {deleted_notes} notes for notebook {self.id}")
-
-            # Delete artifact relationships
-            await repo_query(
-                "DELETE artifact WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
-            )
-
-            # 2. Identify exclusive sources before unlinking (query while references exist)
-            exclusive_sources = []
             if delete_exclusive_sources:
-                # Find sources with count of references to OTHER notebooks
-                # If assigned_others = 0, source is exclusive to this notebook
-                source_counts = await repo_query(
-                    """
-                    SELECT
-                        id,
-                        count(->reference[WHERE out != $notebook_id].out) as assigned_others
-                    FROM (SELECT VALUE <-reference.in AS sources FROM $notebook_id)[0]
-                    """,
-                    {"notebook_id": notebook_id},
+                source_counts = await NotebookRepository.source_reference_counts(
+                    str(self.id)
                 )
-
+                unlinked_sources = 0
                 for src in source_counts:
                     source_id = src.get("id")
                     if source_id and src.get("assigned_others", 0) == 0:
-                        exclusive_sources.append(str(source_id))
+                        exclusive_source_ids.append(str(source_id))
                     else:
                         unlinked_sources += 1
-            else:
-                # Just count sources that will be unlinked
-                source_result = await repo_query(
-                    "SELECT count() as count FROM reference WHERE out = $notebook_id GROUP ALL",
-                    {"notebook_id": notebook_id},
-                )
-                unlinked_sources = source_result[0]["count"] if source_result else 0
 
-            # 3. Delete reference relationships (unlink all sources)
-            #    Must happen BEFORE deleting exclusive sources so that the
-            #    public-source-with-references constraint allows the deletion.
-            await repo_query(
-                "DELETE reference WHERE out = $notebook_id",
-                {"notebook_id": notebook_id},
-            )
-            logger.info(f"Unlinked {unlinked_sources} sources for notebook {self.id}")
-
-            # 4. Delete exclusive sources (now safe — references are already unlinked)
-            for source_id in exclusive_sources:
-                try:
+                for source_id in exclusive_source_ids:
                     source = await Source.get(source_id)
-                    await source.delete()
-                    deleted_sources += 1
+                    if source.asset and source.asset.file_path:
+                        exclusive_file_paths.append(Path(source.asset.file_path))
+            else:
+                unlinked_sources = await NotebookRepository.source_reference_count(
+                    str(self.id)
+                )
+
+            deleted_sources = len(exclusive_source_ids)
+
+            await NotebookRepository.delete_notebook_records_transaction(
+                str(self.id),
+                exclusive_source_ids=exclusive_source_ids,
+                include_knowledge_graph=os.environ.get(
+                    "ENABLE_KNOWLEDGE_GRAPH", "false"
+                ).lower()
+                == "true",
+            )
+
+            for file_path in exclusive_file_paths:
+                try:
+                    if file_path.exists():
+                        os.unlink(file_path)
+                        logger.info(f"Deleted file for exclusive source: {file_path}")
                 except Exception as e:
                     logger.warning(
-                        f"Failed to delete exclusive source {source_id}: {e}"
+                        f"Failed to delete file {file_path} after notebook deletion: {e}"
                     )
 
             logger.info(
-                f"Unlinked {unlinked_sources} sources, deleted {deleted_sources} "
-                f"exclusive sources for notebook {self.id}"
+                f"Deleted notebook {self.id}: notes={deleted_notes}, "
+                f"exclusive_sources={deleted_sources}, unlinked_sources={unlinked_sources}"
             )
-
-            # 5. Delete the notebook record itself
-            await super().delete()
-            logger.info(f"Deleted notebook {self.id}")
 
             return {
                 "deleted_notes": deleted_notes,
@@ -261,13 +194,12 @@ class SourceEmbedding(ObjectModel):
 
     async def get_source(self) -> "Source":
         try:
-            src = await repo_query(
-                """
-            select source.* from $id fetch source
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
-            return Source(**src[0]["source"])
+            source = await SourceRepository.source_for_child_record(str(self.id))
+            if not source:
+                raise DatabaseOperationError(
+                    f"Source not found for embedding {self.id}"
+                )
+            return Source(**source)
         except Exception as e:
             logger.error(f"Error fetching source for embedding {self.id}: {str(e)}")
             logger.exception(e)
@@ -281,13 +213,10 @@ class SourceInsight(ObjectModel):
 
     async def get_source(self) -> "Source":
         try:
-            src = await repo_query(
-                """
-            select source.* from $id fetch source
-            """,
-                {"id": ensure_record_id(self.id)},
-            )
-            return Source(**src[0]["source"])
+            source = await SourceRepository.source_for_child_record(str(self.id))
+            if not source:
+                raise DatabaseOperationError(f"Source not found for insight {self.id}")
+            return Source(**source)
         except Exception as e:
             logger.error(f"Error fetching source for insight {self.id}: {str(e)}")
             logger.exception(e)
@@ -405,15 +334,7 @@ class Source(ObjectModel):
 
     async def get_embedded_chunks(self) -> int:
         try:
-            result = await repo_query(
-                """
-                select count() as chunks from source_embedding where source=$id GROUP ALL
-                """,
-                {"id": ensure_record_id(self.id)},
-            )
-            if len(result) == 0:
-                return 0
-            return result[0]["chunks"]
+            return await SourceRepository.embedded_chunk_count(str(self.id))
         except Exception as e:
             logger.error(f"Error fetching chunks count for source {self.id}: {str(e)}")
             logger.exception(e)
@@ -421,27 +342,14 @@ class Source(ObjectModel):
 
     async def has_knowledge_graph(self) -> bool:
         try:
-            result = await repo_query(
-                """
-                select count() as entities from kg_entity where source_id=$id GROUP ALL
-                """,
-                {"id": str(self.id)},
-            )
-            if len(result) == 0:
-                return False
-            return result[0]["entities"] > 0
+            return await SourceRepository.has_knowledge_graph(str(self.id))
         except Exception as e:
             logger.error(f"Error checking KG for source {self.id}: {str(e)}")
             return False
 
     async def get_insights(self) -> List[SourceInsight]:
         try:
-            result = await repo_query(
-                """
-                SELECT * FROM source_insight WHERE source=$id
-                """,
-                {"id": ensure_record_id(self.id)},
-            )
+            result = await SourceRepository.insight_rows(str(self.id))
             return [SourceInsight(**insight) for insight in result]
         except Exception as e:
             logger.error(f"Error fetching insights for source {self.id}: {str(e)}")
@@ -489,26 +397,29 @@ class Source(ObjectModel):
                 f"Embed source job submitted for source {self.id}: "
                 f"command_id={command_id_str}"
             )
-            
+
             # Submitting KG extraction if enabled
             import os
-            enable_kg = os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true"
+
+            enable_kg = (
+                os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true"
+            )
             if enable_kg:
                 kg_command_id = submit_command(
                     "open_notebook",
                     "extract_knowledge_graph",
                     {"source_id": str(self.id)},
                 )
-                logger.info(f"Extract KG job submitted for source {self.id}: command_id={kg_command_id}")
+                logger.info(
+                    f"Extract KG job submitted for source {self.id}: command_id={kg_command_id}"
+                )
 
             return command_id_str
 
         except ValueError:
             raise
         except Exception as e:
-            logger.error(
-                f"Failed to submit embed_source job for source {self.id}: {e}"
-            )
+            logger.error(f"Failed to submit embed_source job for source {self.id}: {e}")
             logger.exception(e)
             raise DatabaseOperationError(e)
 
@@ -580,12 +491,10 @@ class Source(ObjectModel):
         # Prevent deletion of public sources that are referenced by notebooks
         if self.visibility == "public":
             try:
-                refs = await repo_query(
-                    "SELECT VALUE out FROM reference WHERE in = $source_id",
-                    {"source_id": ensure_record_id(self.id)},
+                notebook_ids = await SourceRepository.referenced_notebook_ids(
+                    str(self.id)
                 )
-                if refs and len(refs) > 0:
-                    notebook_ids = [str(r) for r in refs]
+                if notebook_ids:
                     raise InvalidInputError(
                         f"Cannot delete public source '{self.title or self.id}': "
                         f"it is referenced by {len(notebook_ids)} notebook(s). "
@@ -619,44 +528,20 @@ class Source(ObjectModel):
 
         # Delete associated embeddings and insights to prevent orphaned records
         try:
-            source_id = ensure_record_id(self.id)
-            await repo_query(
-                "DELETE source_embedding WHERE source = $source_id",
-                {"source_id": source_id},
+            await SourceRepository.delete_related_records(
+                str(self.id),
+                include_knowledge_graph=os.environ.get(
+                    "ENABLE_KNOWLEDGE_GRAPH", "false"
+                ).lower()
+                == "true",
             )
-            await repo_query(
-                "DELETE source_insight WHERE source = $source_id",
-                {"source_id": source_id},
+
+            logger.debug(
+                f"Deleted embeddings, insights, KG data, and references for source {self.id}"
             )
-            
-            # Delete associated knowledge graph entities and relations
-            if os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true":
-                await repo_query(
-                    "DELETE kg_entity WHERE source_id = $source_id_str",
-                    {"source_id_str": str(self.id)},
-                )
-                await repo_query(
-                    "DELETE kg_relation WHERE source_id = $source_id_str",
-                    {"source_id_str": str(self.id)},
-                )
-                
-            logger.debug(f"Deleted embeddings, insights, and KG data for source {self.id}")
         except Exception as e:
             logger.warning(
                 f"Failed to delete associated data for source {self.id}: {e}. "
-                "Continuing with source deletion."
-            )
-
-        # Clean up reference edges (unlink from all notebooks)
-        try:
-            await repo_query(
-                "DELETE reference WHERE in = $source_id",
-                {"source_id": ensure_record_id(self.id)},
-            )
-            logger.debug(f"Deleted reference edges for source {self.id}")
-        except Exception as e:
-            logger.warning(
-                f"Failed to clean up reference edges for source {self.id}: {e}. "
                 "Continuing with source deletion."
             )
 
@@ -743,14 +628,12 @@ async def text_search(
     if not keyword:
         raise InvalidInputError("Search keyword cannot be empty")
     try:
-        search_results = await repo_query(
-            """
-            select *
-            from fn::text_search($keyword, $results, $source, $note)
-            """,
-            {"keyword": keyword, "results": results, "source": source, "note": note},
+        return await SearchRepository.text_search(
+            keyword,
+            results,
+            source=source,
+            note=note,
         )
-        return search_results
     except Exception as e:
         logger.error(f"Error performing text search: {str(e)}")
         logger.exception(e)
@@ -767,75 +650,67 @@ async def graph_search(keyword: str, results: int = 5):
         raise InvalidInputError("Search keyword cannot be empty")
     try:
         # Step 1: Find entry points
-        entry_nodes = await repo_query(
-            """
-            SELECT id, name, type, description, math::max([search::score(1), search::score(2)]) AS relevance
-            FROM kg_entity
-            WHERE name @1@ $keyword OR description @2@ $keyword
-            GROUP BY id, name, type, description
-            ORDER BY relevance DESC
-            LIMIT $limit
-            """,
-            {"keyword": keyword, "limit": results},
-        )
-        
+        entry_nodes = await SearchRepository.graph_entry_nodes(keyword, limit=results)
+
         if not entry_nodes:
             return []
 
         entry_ids = [node["id"] for node in entry_nodes]
 
         # Step 2: Expand the subgraph (1-hop traversal)
-        subgraphs = await repo_query(
-            """
-            SELECT 
-                id, 
-                name, 
-                type, 
-                description,
-                ->kg_relation->kg_entity.{id, name, type, description} AS outbound_nodes,
-                ->kg_relation.{type, description} AS outbound_edges,
-                <-kg_relation<-kg_entity.{id, name, type, description} AS inbound_nodes,
-                <-kg_relation.{type, description} AS inbound_edges
-            FROM $entry_ids
-            """,
-            {"entry_ids": entry_ids}
-        )
+        subgraphs = await SearchRepository.graph_subgraphs(entry_ids)
 
         # Format the result into a clean text/structure for the LLM
         formatted_results = []
         for sg in subgraphs:
-            context = f"Entity: [{sg.get('type', 'UNKNOWN')}] {sg.get('name', 'Unnamed')}"
-            if sg.get('description'):
+            context = (
+                f"Entity: [{sg.get('type', 'UNKNOWN')}] {sg.get('name', 'Unnamed')}"
+            )
+            if sg.get("description"):
                 context += f" (Details: {sg['description']})"
             context += "\nRelationships:\n"
-            
+
             # Outbound
             out_edges = sg.get("outbound_edges", [])
             out_nodes = sg.get("outbound_nodes", [])
             for edge, node in zip(out_edges, out_nodes):
-                edge_desc = f" ({edge.get('description')})" if edge and edge.get('description') else ""
-                edge_type = edge.get('type', 'RELATES_TO') if edge else 'RELATES_TO'
-                node_name = node.get('name', 'Unnamed') if node else 'Unnamed'
-                node_type = node.get('type', 'UNKNOWN') if node else 'UNKNOWN'
-                context += f"  - [{edge_type}]{edge_desc} -> [{node_type}] {node_name}\n"
-                
+                edge_desc = (
+                    f" ({edge.get('description')})"
+                    if edge and edge.get("description")
+                    else ""
+                )
+                edge_type = edge.get("type", "RELATES_TO") if edge else "RELATES_TO"
+                node_name = node.get("name", "Unnamed") if node else "Unnamed"
+                node_type = node.get("type", "UNKNOWN") if node else "UNKNOWN"
+                context += (
+                    f"  - [{edge_type}]{edge_desc} -> [{node_type}] {node_name}\n"
+                )
+
             # Inbound
             in_edges = sg.get("inbound_edges", [])
             in_nodes = sg.get("inbound_nodes", [])
             for edge, node in zip(in_edges, in_nodes):
-                edge_desc = f" ({edge.get('description')})" if edge and edge.get('description') else ""
-                edge_type = edge.get('type', 'RELATES_TO') if edge else 'RELATES_TO'
-                node_name = node.get('name', 'Unnamed') if node else 'Unnamed'
-                node_type = node.get('type', 'UNKNOWN') if node else 'UNKNOWN'
-                context += f"  - <- [{edge_type}]{edge_desc} - [{node_type}] {node_name}\n"
-                
-            formatted_results.append({
-                "id": sg["id"],
-                "title": f"Knowledge Graph Context for: {sg.get('name', '')}",
-                "content": context,
-                "type": "kg_subgraph"
-            })
-            
+                edge_desc = (
+                    f" ({edge.get('description')})"
+                    if edge and edge.get("description")
+                    else ""
+                )
+                edge_type = edge.get("type", "RELATES_TO") if edge else "RELATES_TO"
+                node_name = node.get("name", "Unnamed") if node else "Unnamed"
+                node_type = node.get("type", "UNKNOWN") if node else "UNKNOWN"
+                context += (
+                    f"  - <- [{edge_type}]{edge_desc} - [{node_type}] {node_name}\n"
+                )
+
+            formatted_results.append(
+                {
+                    "id": sg["id"],
+                    "title": f"Knowledge Graph Context for: {sg.get('name', '')}",
+                    "content": context,
+                    "type": "kg_subgraph",
+                }
+            )
+
         return formatted_results
 
     except Exception as e:
@@ -858,19 +733,13 @@ async def vector_search(
 
         # Use unified embedding function (handles chunking if query is very long)
         embed = await generate_embedding(keyword)
-        search_results = await repo_query(
-            """
-            SELECT * FROM fn::vector_search($embed, $results, $source, $note, $minimum_score);
-            """,
-            {
-                "embed": embed,
-                "results": results,
-                "source": source,
-                "note": note,
-                "minimum_score": minimum_score,
-            },
+        return await SearchRepository.vector_search(
+            embed,
+            results,
+            source=source,
+            note=note,
+            minimum_score=minimum_score,
         )
-        return search_results
     except Exception as e:
         logger.error(f"Error performing vector search: {str(e)}")
         logger.exception(e)

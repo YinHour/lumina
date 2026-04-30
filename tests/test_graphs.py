@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from open_notebook.domain.notebook import Source
-
 from open_notebook.graphs.prompt import PatternChainState, graph
 from open_notebook.graphs.tools import get_current_timestamp
 from open_notebook.graphs.transformation import (
@@ -284,6 +283,7 @@ class TestContentProcessMarkItDown:
 
     @pytest.mark.asyncio
     async def test_markitdown_document_engine_bypasses_content_core_validation(self, tmp_path, monkeypatch):
+        from open_notebook.content_extractors import service as extraction_service
         from open_notebook.graphs import source as source_graph
 
         sample = tmp_path / "sample.txt"
@@ -305,8 +305,8 @@ class TestContentProcessMarkItDown:
             async def get_defaults(self):
                 return type("Defaults", (), {"default_speech_to_text_model": None})()
 
-        monkeypatch.setattr(source_graph, "ContentSettings", FakeContentSettings)
-        monkeypatch.setattr(source_graph, "ModelManager", FakeModelManager)
+        monkeypatch.setattr(extraction_service, "ContentSettings", FakeContentSettings)
+        monkeypatch.setattr(extraction_service, "ModelManager", FakeModelManager)
 
         result = await source_graph.content_process(
             {

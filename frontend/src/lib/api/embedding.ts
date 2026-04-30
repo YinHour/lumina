@@ -1,17 +1,11 @@
 import apiClient from './client'
+import type { EmbedRequest, EmbedResponse } from '../types/generated-api'
 
-export interface EmbedContentRequest {
-  item_id: string
+export type EmbedContentRequest = Omit<EmbedRequest, 'item_type'> & {
   item_type: 'source' | 'note'
-  async_processing?: boolean
 }
 
-export interface EmbedContentResponse {
-  success: boolean
-  message: string
-  chunks_created?: number
-  command_id?: string
-}
+export type EmbedContentResponse = EmbedResponse
 
 export interface RebuildEmbeddingsRequest {
   mode: 'existing' | 'all'
@@ -59,11 +53,12 @@ export interface RebuildStatusResponse {
 
 export const embeddingApi = {
   embedContent: async (itemId: string, itemType: 'source' | 'note', asyncProcessing = false): Promise<EmbedContentResponse> => {
-    const response = await apiClient.post<EmbedContentResponse>('/embed', {
+    const payload: EmbedContentRequest = {
       item_id: itemId,
       item_type: itemType,
       async_processing: asyncProcessing
-    })
+    }
+    const response = await apiClient.post<EmbedContentResponse>('/embed', payload)
     return response.data
   },
 
