@@ -413,6 +413,7 @@ class SourceListResponse(BaseModel):
     embedded_chunks: int  # Number of embedded chunks
     kg_extracted: bool = False # Boolean flag indicating if source has knowledge graph extracted
     insights_count: int
+    reference_count: int = Field(..., description="Number of notebooks referencing this source")
     created: str
     updated: str
     file_available: Optional[bool] = None

@@ -23,6 +23,12 @@ def test_sources_list_response_contract():
     )
 
 
+def test_sources_list_response_includes_reference_count():
+    schema = app.openapi()["components"]["schemas"]["SourceListResponse"]
+
+    assert "reference_count" in schema["properties"]
+
+
 def test_source_detail_response_contract():
     assert (
         _schema_ref_for("/api/sources/{source_id}", "get")

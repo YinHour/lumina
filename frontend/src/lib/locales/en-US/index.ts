@@ -137,6 +137,7 @@ export const enUS = {
   apiErrors: {
     notebookNotFound: "Notebook not found",
     sourceNotFound: "Source not found",
+    sourceReferencedCannotDelete: "Referenced public sources cannot be deleted. Remove the source from notebooks first.",
     transformationNotFound: "Transformation not found",
     fileUploadFailed: "File upload failed",
     urlRequired: "URL is required for link type",
@@ -413,6 +414,7 @@ export const enUS = {
     makePublicSuccess: "Source is now public",
     maxItems: "max {count}",
     insightsCount: "{count} insights",
+    referenceCount: "References",
     details: "Details",
     detailsTitle: "Source Details",
     content: "Content",

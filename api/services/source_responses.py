@@ -52,6 +52,7 @@ def source_list_response_from_row(row: dict[str, Any]) -> SourceListResponse:
         embedded_chunks=0,
         kg_extracted=row.get("kg_extracted", False),
         insights_count=row.get("insights_count", 0),
+        reference_count=row.get("reference_count", 0),
         created=str(row["created"]),
         updated=str(row["updated"]),
         command_id=command_id,
@@ -60,4 +61,3 @@ def source_list_response_from_row(row: dict[str, Any]) -> SourceListResponse:
         owner_id=row.get("owner_id"),
         visibility=row.get("visibility", "private"),
     )
-

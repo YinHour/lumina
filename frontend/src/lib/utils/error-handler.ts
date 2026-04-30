@@ -4,6 +4,7 @@
 export const ERROR_MAP: Record<string, string> = {
   "Notebook not found": "apiErrors.notebookNotFound",
   "Source not found": "apiErrors.sourceNotFound",
+  "Cannot delete public source": "apiErrors.sourceReferencedCannotDelete",
   "Transformation not found": "apiErrors.transformationNotFound",
   "File upload failed": "apiErrors.fileUploadFailed",
   "URL is required for link type": "apiErrors.urlRequired",

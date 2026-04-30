@@ -654,6 +654,7 @@ export interface SourceListResponse {
   embedded_chunks: number
   kg_extracted?: boolean
   insights_count: number
+  reference_count: number
   created: string
   updated: string
   file_available?: boolean | null

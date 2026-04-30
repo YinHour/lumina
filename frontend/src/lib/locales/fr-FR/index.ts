@@ -135,6 +135,7 @@ export const frFR = {
   apiErrors: {
     notebookNotFound: "Carnet introuvable",
     sourceNotFound: "Source introuvable",
+    sourceReferencedCannotDelete: "Les sources publiques référencées ne peuvent pas être supprimées. Retirez d'abord la source des carnets.",
     transformationNotFound: "Transformation introuvable",
     fileUploadFailed: "Échec du téléchargement du fichier",
     urlRequired: "L'URL est requise pour le type lien",
@@ -322,6 +323,7 @@ export const frFR = {
     untitledSource: "Source sans titre",
     maxItems: "max {count}",
     insightsCount: "{count} aperçus",
+    referenceCount: "Références",
     details: "Détails",
     detailsTitle: "Détails de la source",
     content: "Contenu",

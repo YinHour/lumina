@@ -135,6 +135,7 @@ export const jaJP = {
   apiErrors: {
     notebookNotFound: "ノートブックが見つかりません",
     sourceNotFound: "ソースが見つかりません",
+    sourceReferencedCannotDelete: "参照されている公開ソースは削除できません。先にノートブックから削除してください。",
     transformationNotFound: "トランスフォーメーションが見つかりません",
     fileUploadFailed: "ファイルのアップロードに失敗しました",
     urlRequired: "リンクタイプにはURLが必要です",
@@ -322,6 +323,7 @@ export const jaJP = {
     untitledSource: "無題のソース",
     maxItems: "最大{count}件",
     insightsCount: "{count}件のインサイト",
+    referenceCount: "参照数",
     details: "詳細",
     detailsTitle: "ソース詳細",
     content: "コンテンツ",

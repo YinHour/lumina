@@ -135,6 +135,7 @@ export const itIT = {
   apiErrors: {
     notebookNotFound: "Quaderno non trovato",
     sourceNotFound: "Fonte non trovata",
+    sourceReferencedCannotDelete: "Le fonti pubbliche referenziate non possono essere eliminate. Rimuovi prima la fonte dai quaderni.",
     transformationNotFound: "Trasformazione non trovata",
     fileUploadFailed: "Caricamento file fallito",
     urlRequired: "L'URL è obbligatorio per il tipo link",
@@ -322,6 +323,7 @@ export const itIT = {
     untitledSource: "Fonte senza titolo",
     maxItems: "max {count}",
     insightsCount: "{count} approfondimenti",
+    referenceCount: "Riferimenti",
     details: "Dettagli",
     detailsTitle: "Dettagli fonte",
     content: "Contenuto",

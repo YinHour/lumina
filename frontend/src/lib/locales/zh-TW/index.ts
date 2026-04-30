@@ -135,6 +135,7 @@ export const zhTW = {
   apiErrors: {
     notebookNotFound: "找不到筆記本",
     sourceNotFound: "找不到源檔案",
+    sourceReferencedCannotDelete: "已引用來源不能刪除，請先從筆記本中移除該來源。",
     transformationNotFound: "找不到轉換規則",
     fileUploadFailed: "檔案上傳失敗",
     urlRequired: "連結類型需要提供 URL",
@@ -322,6 +323,7 @@ export const zhTW = {
     untitledSource: "未命名來源",
     maxItems: "最多 {count} 個",
     insightsCount: "{count} 條見解",
+    referenceCount: "引用次數",
     details: "詳情",
     detailsTitle: "來源詳情",
     content: "內容",

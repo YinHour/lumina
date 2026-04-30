@@ -66,6 +66,7 @@ import { formatDistanceToNow } from 'date-fns'
 import { getDateLocale } from '@/lib/utils/date-locale'
 import { toast } from 'sonner'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { getApiErrorMessage } from '@/lib/utils/error-handler'
 import { SourceInsightDialog } from '@/components/source/SourceInsightDialog'
 import { NotebookAssociations } from '@/components/source/NotebookAssociations'
 
@@ -365,7 +366,7 @@ export function SourceDetailContent({
         onClose?.()
       } catch (error) {
         console.error('Failed to delete source:', error)
-        toast.error(t.common.error)
+        toast.error(getApiErrorMessage(error, (key) => t(key), 'apiErrors.genericError'))
       }
     }
   }

@@ -135,6 +135,7 @@ export const bnIN = {
   apiErrors: {
     notebookNotFound: "নোটবুক খুঁজে পাওয়া যায়নি",
     sourceNotFound: "উৎস খুঁজে পাওয়া যায়নি",
+    sourceReferencedCannotDelete: "রেফারেন্সযুক্ত পাবলিক উৎস মুছে ফেলা যাবে না। আগে নোটবুক থেকে উৎসটি সরান।",
     transformationNotFound: "ট্রান্সফরমেশন খুঁজে পাওয়া যায়নি",
     fileUploadFailed: "ফাইল আপলোড ব্যর্থ",
     urlRequired: "লিন্ক টাইপের জন্য URL প্রয়োজন",
@@ -322,6 +323,7 @@ export const bnIN = {
     untitledSource: "শিরোনামহীন উৎস",
     maxItems: "সর্বোচ্চ {count}",
     insightsCount: "{count}টি অন্তর্দৃষ্টি",
+    referenceCount: "রেফারেন্স",
     details: "বিবরণ",
     detailsTitle: "উৎসের বিবরণ",
     content: "কন্টেন্ট",

@@ -135,6 +135,7 @@ export const ruRU = {
   apiErrors: {
     notebookNotFound: "Блокнот не найден",
     sourceNotFound: "Источник не найден",
+    sourceReferencedCannotDelete: "Нельзя удалить публичный источник, на который есть ссылки. Сначала удалите его из блокнотов.",
     transformationNotFound: "Трансформация не найдена",
     fileUploadFailed: "Не удалось загрузить файл",
     urlRequired: "URL обязателен для типа «ссылка»",
@@ -322,6 +323,7 @@ export const ruRU = {
     untitledSource: "Без названия",
     maxItems: "макс. {count}",
     insightsCount: "Инсайтов: {count}",
+    referenceCount: "Ссылки",
     details: "Детали",
     detailsTitle: "Детали источника",
     content: "Содержимое",

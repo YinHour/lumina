@@ -216,10 +216,19 @@ export default function SourcesPage() {
       if (result.failed_count === 0) {
         toast.success(t.sources.bulkDeleteSuccess.replace('{count}', String(result.deleted_count)))
       } else {
+        const partialMessage = t.sources.bulkDeletePartial
+          .replace('{deleted}', String(result.deleted_count))
+          .replace('{failed}', String(result.failed_count))
+        const hasReferencedFailure = result.results.some(
+          (item) =>
+            !item.deleted &&
+            getApiErrorKey(item.error) === 'apiErrors.sourceReferencedCannotDelete'
+        )
+
         toast.warning(
-          t.sources.bulkDeletePartial
-            .replace('{deleted}', String(result.deleted_count))
-            .replace('{failed}', String(result.failed_count))
+          hasReferencedFailure
+            ? `${partialMessage} ${t.apiErrors.sourceReferencedCannotDelete}`
+            : partialMessage
         )
       }
       setSelectedIds(new Set())
@@ -244,6 +253,7 @@ export default function SourcesPage() {
   const tVisibilityPrivate = t.visibility?.private ?? 'Private'
   const tVisibilityPublic = t.visibility?.public ?? 'Public'
   const tSourcesKgExtracted = t.sources?.kgExtracted ?? 'KG Extracted'
+  const tSourcesKgExtractQueued = t.sources?.kgExtractQueued ?? 'KG extraction queued'
 
   const getSourceIcon = (source: SourceListResponse) => {
     if (source.asset?.url) return <LinkIcon className="h-4 w-4" />
@@ -262,17 +272,12 @@ export default function SourcesPage() {
     router.push(`/sources/${sourceId}`)
   }, [router])
 
-  const handleDeleteClick = useCallback((e: React.MouseEvent, source: SourceListResponse) => {
-    e.stopPropagation() // Prevent row click
-    setDeleteDialog({ open: true, source })
-  }, [])
-
   const handleExtractKg = useCallback(async (e: React.MouseEvent, sourceId: string) => {
     e.stopPropagation() // Prevent row click
     try {
       const result = await sourcesApi.extractKg(sourceId)
       if (result.success) {
-        toast.success(t.sources?.kgExtractQueued || "知识图谱抽取已加入队列")
+        toast.success(tSourcesKgExtractQueued)
         // Optimistic update: flip kg_extracted to true
         setSources(prev => prev.map(s => s.id === sourceId ? { ...s, kg_extracted: true } : s))
       }
@@ -280,11 +285,11 @@ export default function SourcesPage() {
       const error = err as { response?: { data?: { detail?: string } }, message?: string }
       toast.error(t(getApiErrorKey(error.response?.data?.detail || error.message)))
     }
-  }, [t, t.sources?.kgExtractQueued])
+  }, [t, tSourcesKgExtractQueued])
 
   const handleMakePublic = async (sourceId: string) => {
     try {
-      const updated = await sourcesApi.makePublic(sourceId)
+      await sourcesApi.makePublic(sourceId)
       setSources(prev => prev.map(s => s.id === sourceId ? { ...s, visibility: 'public' as const } : s))
       toast.success(t.sources?.makePublicSuccess || "已设为公开")
     } catch (err: unknown) {
@@ -387,7 +392,7 @@ export default function SourcesPage() {
           <table
             ref={tableRef}
             tabIndex={0}
-            className="w-full min-w-[1040px] outline-none table-fixed"
+            className="w-full min-w-[1120px] outline-none table-fixed"
           >
             <colgroup>
               <col className="w-[40px]" />
@@ -395,6 +400,7 @@ export default function SourcesPage() {
               <col className="w-auto" />
               <col className="w-[90px]" />
               <col className="w-[140px]" />
+              <col className="w-[90px]" />
               <col className="w-[90px]" />
               <col className="w-[80px]" />
               <col className="w-[90px]" />
@@ -438,6 +444,9 @@ export default function SourcesPage() {
                 </th>
                 <th className="h-12 px-2 text-center align-middle font-medium text-muted-foreground hidden md:table-cell">
                   {t.sources.insights}
+                </th>
+                <th className="h-12 px-2 text-center align-middle font-medium text-muted-foreground hidden md:table-cell">
+                  {t.sources.referenceCount}
                 </th>
                 <th className="h-12 px-2 text-center align-middle font-medium text-muted-foreground hidden lg:table-cell">
                   {t.sources.embedded}
@@ -515,6 +524,14 @@ export default function SourcesPage() {
                   </td>
                   <td className="h-12 px-2 text-center hidden md:table-cell">
                     <span className="text-sm font-medium">{source.insights_count || 0}</span>
+                  </td>
+                  <td className="h-12 px-2 text-center hidden md:table-cell">
+                    <Badge
+                      variant={source.reference_count > 0 ? "secondary" : "outline"}
+                      className="text-xs"
+                    >
+                      {source.reference_count || 0}
+                    </Badge>
                   </td>
                   <td className="h-12 px-2 text-center hidden lg:table-cell">
                     <Badge variant={source.embedded ? "default" : "secondary"} className="text-xs">

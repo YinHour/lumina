@@ -135,6 +135,7 @@ export const ptBR = {
   apiErrors: {
     notebookNotFound: "Caderno não encontrado",
     sourceNotFound: "Fonte não encontrada",
+    sourceReferencedCannotDelete: "Fontes públicas referenciadas não podem ser excluídas. Remova a fonte dos cadernos primeiro.",
     transformationNotFound: "Transformação não encontrada",
     fileUploadFailed: "Falha no upload do arquivo",
     urlRequired: "URL é obrigatória para tipo link",
@@ -322,6 +323,7 @@ export const ptBR = {
     untitledSource: "Fonte Sem Título",
     maxItems: "máx {count}",
     insightsCount: "{count} insights",
+    referenceCount: "Referências",
     details: "Detalhes",
     detailsTitle: "Detalhes da Fonte",
     content: "Conteúdo",

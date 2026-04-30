@@ -135,6 +135,7 @@ export const zhCN = {
   apiErrors: {
     notebookNotFound: "找不到笔记本",
     sourceNotFound: "找不到源文件",
+    sourceReferencedCannotDelete: "已引用来源不能删除，请先从笔记本中移除该来源。",
     transformationNotFound: "找不到转换规则",
     fileUploadFailed: "文件上传失败",
     urlRequired: "链接类型需要提供 URL",
@@ -411,6 +412,7 @@ export const zhCN = {
     makePublicSuccess: "已设为公开",
     maxItems: "最多 {count} 个",
     insightsCount: "{count} 条见解",
+    referenceCount: "引用次数",
     details: "详情",
     detailsTitle: "来源详情",
     content: "内容",
