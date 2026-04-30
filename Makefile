@@ -1,6 +1,7 @@
-.PHONY: run frontend frontend-test-bib check ruff database lint api start-all stop-all status clean-cache worker worker-start worker-stop worker-restart
-.PHONY: docker-buildx-prepare docker-buildx-clean docker-buildx-reset
-.PHONY: docker-push docker-push-latest docker-release docker-build-local tag export-docs
+.PHONY: help dev run start-all stop-all status api frontend database worker worker-start worker-stop worker-restart
+.PHONY: test frontend-test-bib check lint ruff clean-cache export-docs
+.PHONY: docker-dev docker-full docker-buildx-prepare docker-buildx-clean docker-buildx-reset
+.PHONY: docker-push docker-push-latest docker-release docker-build-local tag
 
 # Get version from pyproject.toml
 VERSION := $(shell grep -m1 version pyproject.toml | cut -d'"' -f2)
@@ -12,25 +13,109 @@ GHCR_IMAGE := ghcr.io/lfnovo/open-notebook
 # Build platforms
 PLATFORMS := linux/amd64,linux/arm64
 
+WORKER_MAX_TASKS ?= $(or $(SURREAL_COMMANDS_MAX_TASKS),5)
+
+help:
+	@echo "Lumina development commands"
+	@echo ""
+	@echo "Local development:"
+	@echo "  make dev / make start-all   Start local dev environment via ./dev-init.sh"
+	@echo "  make stop-all               Stop local dev environment via ./dev-init.sh stop"
+	@echo "  make status                 Show local ports, PID file, and Docker DB status"
+	@echo "  make api                    Start API only"
+	@echo "  make frontend               Start frontend only"
+	@echo "  make worker                 Start worker only with bounded concurrency"
+	@echo "  make database               Start SurrealDB v3 from docker-compose.yml"
+	@echo ""
+	@echo "Checks:"
+	@echo "  make test                   Run pytest tests/"
+	@echo "  make ruff                   Run ruff --fix"
+	@echo "  make lint                   Run mypy"
+	@echo ""
+	@echo "Docker:"
+	@echo "  make docker-dev             Build/run examples/docker-compose-dev.yml"
+	@echo "  make docker-full            Build/run examples/docker-compose-full-local.yml"
+	@echo "  make docker-build-local     Build local production image"
+
+dev: start-all
+
+run: start-all
+
+start-all:
+	@echo "🚀 Starting Lumina local development environment..."
+	./dev-init.sh
+
+stop-all:
+	@echo "🛑 Stopping Lumina local development environment..."
+	./dev-init.sh stop
+	@docker compose down >/dev/null 2>&1 || true
+	@echo "✅ Stop requested"
+
+status:
+	@echo "📊 Lumina local status"
+	@printf "Dev PID file: "
+	@if [ -f /tmp/lumina-dev.pid ] && kill -0 "$$(cat /tmp/lumina-dev.pid)" >/dev/null 2>&1; then \
+		echo "✅ running ($$(cat /tmp/lumina-dev.pid))"; \
+	elif [ -f /tmp/lumina-dev.pid ]; then \
+		echo "⚠️ stale ($$(cat /tmp/lumina-dev.pid))"; \
+	else \
+		echo "❌ missing"; \
+	fi
+	@printf "SurrealDB 8000: "
+	@lsof -nP -iTCP:8000 -sTCP:LISTEN >/dev/null 2>&1 && echo "✅ listening" || echo "❌ not listening"
+	@printf "API 5055:      "
+	@curl -fsS http://127.0.0.1:5055/api/auth/status >/dev/null 2>&1 && echo "✅ healthy" || echo "❌ not healthy"
+	@printf "Frontend 3000: "
+	@curl -fsS -I http://127.0.0.1:3000 >/dev/null 2>&1 && echo "✅ healthy" || echo "❌ not healthy"
+	@printf "Worker:        "
+	@pgrep -f "worker_with_timeout.py" >/dev/null 2>&1 && echo "✅ running" || echo "❌ not running"
+	@echo ""
+	@echo "Docker compose database:"
+	@docker compose ps surrealdb 2>/dev/null || echo "  not running via docker compose"
+
 database:
 	docker compose up -d surrealdb
 
-run:
-	@echo "⚠️  Warning: Starting frontend only. For full functionality, use 'make start-all'"
-	cd frontend && npm run dev
+api:
+	API_PORT="$${API_PORT:-5055}" uv run --env-file .env run_api.py
 
 frontend:
-	cd frontend && npm run dev
+	cd frontend && npm run dev -- --port "$${FRONTEND_PORT:-3000}"
 
-# Verify 参考文献 auto-numbering (run on your machine; requires Node/npm in PATH)
+worker: worker-start
+
+worker-start:
+	@echo "Starting surreal-commands worker with max tasks=$(WORKER_MAX_TASKS)..."
+	uv run --env-file .env python3 scripts/worker_with_timeout.py --import-modules commands --max-tasks "$(WORKER_MAX_TASKS)"
+
+worker-stop:
+	@echo "Stopping local worker..."
+	@pkill -f "worker_with_timeout.py" || true
+	@pkill -f "surreal-commands-worker" || true
+
+worker-restart: worker-stop
+	@sleep 2
+	@$(MAKE) worker-start
+
+test:
+	uv run pytest tests/
+
 frontend-test-bib:
 	cd frontend && npm run test -- --run src/lib/utils/source-references.bibliography.test.ts
+
+check: ruff lint test
 
 lint:
 	uv run python -m mypy .
 
 ruff:
-	ruff check . --fix
+	uv run ruff check . --fix
+
+docker-dev:
+	docker compose --project-directory . -f examples/docker-compose-dev.yml up --build
+
+docker-full:
+	docker compose --project-directory . -f examples/docker-compose-full-local.yml up --build
 
 # === Docker Build Setup ===
 docker-buildx-prepare:
@@ -49,7 +134,6 @@ docker-buildx-reset: docker-buildx-clean docker-buildx-prepare
 
 # === Docker Build Targets ===
 
-# Build production image for local platform only (no push)
 docker-build-local:
 	@echo "🔨 Building production image locally ($(shell uname -m))..."
 	docker build \
@@ -59,7 +143,6 @@ docker-build-local:
 	@echo "✅ Built $(DOCKERHUB_IMAGE):$(VERSION) and $(DOCKERHUB_IMAGE):local"
 	@echo "Run with: docker run -p 5055:5055 -p 3000:3000 $(DOCKERHUB_IMAGE):local"
 
-# Build and push version tags ONLY (no latest) for both regular and single images
 docker-push: docker-buildx-prepare
 	@echo "📤 Building and pushing version $(VERSION) to both registries..."
 	@echo "🔨 Building regular image..."
@@ -80,14 +163,7 @@ docker-push: docker-buildx-prepare
 		--push \
 		.
 	@echo "✅ Pushed version $(VERSION) to both registries (latest NOT updated)"
-	@echo "  📦 Docker Hub:"
-	@echo "    - $(DOCKERHUB_IMAGE):$(VERSION)"
-	@echo "    - $(DOCKERHUB_IMAGE):$(VERSION)-single"
-	@echo "  📦 GHCR:"
-	@echo "    - $(GHCR_IMAGE):$(VERSION)"
-	@echo "    - $(GHCR_IMAGE):$(VERSION)-single"
 
-# Update v1-latest tags to current version (both regular and single images)
 docker-push-latest: docker-buildx-prepare
 	@echo "📤 Updating v1-latest tags to version $(VERSION)..."
 	@echo "🔨 Building regular image with latest tag..."
@@ -112,14 +188,7 @@ docker-push-latest: docker-buildx-prepare
 		--push \
 		.
 	@echo "✅ Updated v1-latest to version $(VERSION)"
-	@echo "  📦 Docker Hub:"
-	@echo "    - $(DOCKERHUB_IMAGE):$(VERSION) → v1-latest"
-	@echo "    - $(DOCKERHUB_IMAGE):$(VERSION)-single → v1-latest-single"
-	@echo "  📦 GHCR:"
-	@echo "    - $(GHCR_IMAGE):$(VERSION) → v1-latest"
-	@echo "    - $(GHCR_IMAGE):$(VERSION)-single → v1-latest-single"
 
-# Full release: push version AND update latest tags
 docker-release: docker-push-latest
 	@echo "✅ Full release complete for version $(VERSION)"
 
@@ -129,79 +198,11 @@ tag:
 	git tag "v$$version"; \
 	git push origin "v$$version"
 
-
-dev:
-	docker compose -f docker-compose.dev.yml up --build 
-
-full:
-	docker compose -f docker-compose.full.yml up --build 
-
-
-api:
-	uv run --env-file .env run_api.py
-
-.PHONY: worker worker-start worker-stop worker-restart
-
-worker: worker-start
-
-worker-start:
-	@echo "Starting surreal-commands worker..."
-	uv run --env-file .env surreal-commands-worker --import-modules commands
-
-worker-stop:
-	@echo "Stopping surreal-commands worker..."
-	pkill -f "surreal-commands-worker" || true
-
-worker-restart: worker-stop
-	@sleep 2
-	@$(MAKE) worker-start
-
-# === Service Management ===
-start-all:
-	@echo "🚀 Starting Open Notebook (Database + API + Worker + Frontend)..."
-	@echo "📊 Starting SurrealDB..."
-	@docker compose -f docker-compose.dev.yml up -d surrealdb
-	@sleep 3
-	@echo "🔧 Starting API backend..."
-	@uv run run_api.py &
-	@sleep 3
-	@echo "⚙️ Starting background worker..."
-	@uv run --env-file .env surreal-commands-worker --import-modules commands &
-	@sleep 2
-	@echo "🌐 Starting Next.js frontend..."
-	@echo "✅ All services started!"
-	@echo "📱 Frontend: http://localhost:3000"
-	@echo "🔗 API: http://localhost:5055"
-	@echo "📚 API Docs: http://localhost:5055/docs"
-	cd frontend && npm run dev
-
-stop-all:
-	@echo "🛑 Stopping all Open Notebook services..."
-	@pkill -f "next dev" || true
-	@pkill -f "surreal-commands-worker" || true
-	@pkill -f "run_api.py" || true
-	@pkill -f "uvicorn api.main:app" || true
-	@docker compose down
-	@echo "✅ All services stopped!"
-
-status:
-	@echo "📊 Open Notebook Service Status:"
-	@echo "Database (SurrealDB):"
-	@docker compose ps surrealdb 2>/dev/null || echo "  ❌ Not running"
-	@echo "API Backend:"
-	@pgrep -f "run_api.py\|uvicorn api.main:app" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
-	@echo "Background Worker:"
-	@pgrep -f "surreal-commands-worker" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
-	@echo "Next.js Frontend:"
-	@pgrep -f "next dev" >/dev/null && echo "  ✅ Running" || echo "  ❌ Not running"
-
-# === Documentation Export ===
 export-docs:
 	@echo "📚 Exporting documentation..."
 	@uv run python scripts/export_docs.py
 	@echo "✅ Documentation export complete!"
 
-# === Cleanup ===
 clean-cache:
 	@echo "🧹 Cleaning cache directories..."
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true

@@ -112,8 +112,8 @@ Copy this into a new file called `docker-compose.yml`:
 ```yaml
 services:
   surrealdb:
-    image: surrealdb/surrealdb:v2
-    command: start --log info --user root --pass root rocksdb:/mydata/mydatabase.db
+    image: surrealdb/surrealdb:v3.0.5
+    command: start --log info --user root --pass root --bind 0.0.0.0:8000 rocksdb:/mydata/mydatabase.db
     user: root
     ports:
       - "8000:8000"

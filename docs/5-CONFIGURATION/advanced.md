@@ -9,6 +9,12 @@ Performance tuning, debugging, and advanced features.
 ### Concurrency Control
 
 ```env
+# Process-local SurrealDB connection pool (default: 10)
+SURREAL_POOL_SIZE=10
+SURREAL_POOL_ACQUIRE_TIMEOUT=5
+SURREAL_QUERY_TIMEOUT=30
+SURREAL_TRANSACTION_RETRY_ATTEMPTS=3
+
 # Max concurrent database operations (default: 5)
 # Increase: Faster processing, more conflicts
 # Decrease: Slower, fewer conflicts
@@ -20,7 +26,7 @@ SURREAL_COMMANDS_MAX_TASKS=5
 - CPU: 4 cores → 5 tasks (default)
 - CPU: 8+ cores → 10-20 tasks
 
-Higher concurrency = more throughput but more database conflicts (retries handle this).
+Higher concurrency = more throughput but more database pressure. Keep `SURREAL_POOL_SIZE` at least as large as expected API + worker concurrency, and lower `SURREAL_COMMANDS_MAX_TASKS` first if transaction conflicts increase.
 
 ### Retry Strategy
 

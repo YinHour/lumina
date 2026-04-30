@@ -8,7 +8,7 @@ Before you start, ensure you have the following installed:
 
 - **Python 3.11+** - Check with: `python --version`
 - **uv** (recommended) or **pip** - Install from: https://github.com/astral-sh/uv
-- **SurrealDB v2** - Via local binary or Docker (v2 is required for current migrations)
+- **SurrealDB 3.0.x** - Via local binary or Docker (v3.0.5 is the pinned target)
 - **Docker** (optional) - Only if you want a containerized database instead of the preferred local workflow
 - **Node.js 18+** (optional) - For frontend development
 - **Git** - For version control
@@ -101,26 +101,27 @@ For daily Lumina development, use the one-command local workflow:
 This script:
 
 1. Loads `.env`
-2. Reuses an existing SurrealDB instance or auto-starts a local SurrealDB v2 binary
+2. Reuses an existing SurrealDB instance or auto-starts a local SurrealDB 3.0.x binary
 3. Starts the API on port 5055
 4. Waits for `GET /api/auth/status` to become healthy
-5. Starts the worker and frontend
+5. Starts the worker with a bounded local concurrency limit and starts the frontend
 6. Cleans up processes it started when you press `Ctrl+C`
 
 Optional overrides:
 
 ```bash
 FRONTEND_PORT=3001 ./dev-init.sh
+WORKER_MAX_TASKS=2 ./dev-init.sh
 START_LOCAL_SURREAL=false ./dev-init.sh
-LOCAL_SURREAL_BINARY=$HOME/Library/Caches/surrealdb/surreal_v2 ./dev-init.sh
+LOCAL_SURREAL_BINARY=$HOME/Library/Caches/surrealdb/surreal_v3 ./dev-init.sh
 ```
 
 ## Step 5: Start SurrealDB manually (optional advanced workflow)
 
-### Option A: Using local SurrealDB v2 binary
+### Option A: Using local SurrealDB 3.0.x binary
 
 ```bash
-$HOME/Library/Caches/surrealdb/surreal_v2 start \
+$HOME/Library/Caches/surrealdb/surreal_v3 start \
   --log info \
   --bind 127.0.0.1:8000 \
   --user root \
@@ -133,16 +134,16 @@ $HOME/Library/Caches/surrealdb/surreal_v2 start \
 ```bash
 # Start SurrealDB in memory
 docker run -d --name surrealdb -p 8000:8000 \
-  surrealdb/surrealdb:v2 start \
-  --user root --pass password \
+  surrealdb/surrealdb:v3.0.5 start \
+  --user root --pass root \
   --bind 0.0.0.0:8000 memory
 
 # Or with persistent storage
 docker run -d --name surrealdb -p 8000:8000 \
   -v surrealdb_data:/data \
-  surrealdb/surrealdb:v2 start \
-  --user root --pass password \
-  --bind 0.0.0.0:8000 file:/data/surreal.db
+  surrealdb/surrealdb:v3.0.5 start \
+  --user root --pass root \
+  --bind 0.0.0.0:8000 rocksdb:/data/surreal.db
 ```
 
 ### Option C: Using Make
@@ -363,8 +364,8 @@ git push origin feature/my-feature -f
 **Solutions**:
 1. Check if SurrealDB is running: `lsof -i :8000`
 2. Verify URL in `.env`: Should be `ws://127.0.0.1:8000/rpc`
-3. Confirm you are using SurrealDB v2, not v3
-4. Restart with `./dev-init.sh` or start the local v2 binary manually
+3. Confirm you are using SurrealDB 3.0.x
+4. Restart with `./dev-init.sh` or start the local v3 binary manually
 
 ### "Address already in use"
 

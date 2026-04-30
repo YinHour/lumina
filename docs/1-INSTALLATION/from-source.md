@@ -7,7 +7,7 @@ Clone the repository and run locally. **For developers and contributors.**
 - **Python 3.11+** - [Download](https://www.python.org/)
 - **Node.js 18+** - [Download](https://nodejs.org/)
 - **Git** - [Download](https://git-scm.com/)
-- **SurrealDB v2 binary or Docker** (v2 is required for current migrations)
+- **SurrealDB 3.0.x binary or Docker** (v3.0.5 is the pinned target)
 - **uv** (Python package manager) - `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - API key from OpenAI or similar (or use Ollama for free)
 
@@ -57,7 +57,7 @@ cp .env.example .env
 ./dev-init.sh
 ```
 
-This is the preferred contributor workflow. The script starts the API, worker, and frontend, and auto-starts a local SurrealDB v2 instance if needed.
+This is the preferred contributor workflow. The script starts the API, bounded-concurrency worker, and frontend, and auto-starts a local SurrealDB 3.0.x instance if needed.
 
 ### 4. Start SurrealDB manually (optional)
 

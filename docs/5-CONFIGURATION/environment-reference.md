@@ -122,6 +122,10 @@ and keep `SMTP_PASSWORD` / `RESEND_API_KEY` out of committed files.
 
 | Variable | Required? | Default | Description |
 |----------|-----------|---------|-------------|
+| `SURREAL_POOL_SIZE` | No | 10 | Process-local SurrealDB connection pool size |
+| `SURREAL_POOL_ACQUIRE_TIMEOUT` | No | 5 | Seconds to wait for an available pooled connection |
+| `SURREAL_QUERY_TIMEOUT` | No | 30 | Per-query timeout in seconds; set to 0 to disable |
+| `SURREAL_TRANSACTION_RETRY_ATTEMPTS` | No | 3 | Transaction conflict retry attempts for repository transactions |
 | `SURREAL_COMMANDS_MAX_TASKS` | No | 5 | Maximum concurrent database tasks |
 
 ---

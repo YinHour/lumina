@@ -7,7 +7,7 @@ Get Lumina running locally in 5 minutes.
 - **Python 3.11+**
 - **Git**
 - **uv** (package manager) - install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- **SurrealDB v2 binary or Docker** (optional if you let `./dev-init.sh` auto-start the local binary)
+- **SurrealDB 3.0.x binary or Docker** (optional if you let `./dev-init.sh` auto-start the local binary)
 
 ## 1. Clone the Repository (2 min)
 

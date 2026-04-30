@@ -66,7 +66,7 @@ class SourceRepository:
     async def source_for_child_record(record_id: str) -> Optional[dict[str, Any]]:
         result = await repo_query(
             """
-            SELECT source.* FROM $record_id FETCH source
+            SELECT source FROM $record_id FETCH source
             """,
             {"record_id": ensure_record_id(record_id)},
         )

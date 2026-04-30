@@ -421,8 +421,8 @@ services:
       - surrealdb
 
   surrealdb:
-    image: surrealdb/surrealdb:latest
-    command: start --log trace --user root --pass root file:/mydata/database.db
+    image: surrealdb/surrealdb:v3.0.5
+    command: start --log trace --user root --pass root --bind 0.0.0.0:8000 rocksdb:/mydata/database.db
     ports:
       - "8000:8000"
     volumes:

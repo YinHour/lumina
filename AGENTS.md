@@ -190,6 +190,9 @@ See dedicated AGENTS.md files for detailed guidance:
 
 ## Common Tasks
 
+### Start Local Development Environment
+Use `./dev-init.sh` as the default local development startup script. It is the canonical all-in-one workflow for contributors: it loads `.env`, reuses or starts local SurrealDB 3.0.x, syncs dependencies, starts the API, initializes the admin user, starts the timeout-aware worker, and runs the frontend. Use manual `make database`, `make api`, worker, or frontend terminal commands only for targeted debugging.
+
 ### Add a New API Endpoint
 1. Create router in `api/routers/feature.py`
 2. Create service/use-case logic in `api/services/feature_service.py`

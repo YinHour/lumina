@@ -1,4 +1,6 @@
 # Load environment variables
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,6 +47,7 @@ from api.routers import (
 )
 from api.routers import commands as commands_router
 from open_notebook.database.async_migrate import AsyncMigrationManager
+from open_notebook.database.repository import close_database_pool, initialize_database_pool
 from open_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -70,10 +73,9 @@ async def lifespan(app: FastAPI):
     Lifespan event handler for the FastAPI application.
     Runs database migrations automatically on startup.
     """
-    import os
-
     # Startup: Security checks
     logger.info("Starting API initialization...")
+    database_pool_started = False
 
     # Security check: Encryption key
     if not get_secret_from_env("OPEN_NOTEBOOK_ENCRYPTION_KEY"):
@@ -83,46 +85,53 @@ async def lifespan(app: FastAPI):
             "Set OPEN_NOTEBOOK_ENCRYPTION_KEY to any secret string."
         )
 
-    # Run database migrations
-
     try:
-        migration_manager = AsyncMigrationManager()
-        current_version = await migration_manager.get_current_version()
-        logger.info(f"Current database version: {current_version}")
+        # Pre-warm the process-local SurrealDB connection pool before migrations.
+        await initialize_database_pool()
+        database_pool_started = True
 
-        if await migration_manager.needs_migration():
-            logger.warning("Database migrations are pending. Running migrations...")
-            await migration_manager.run_migration_up()
-            new_version = await migration_manager.get_current_version()
-            logger.success(
-                f"Migrations completed successfully. Database is now at version {new_version}"
-            )
-        else:
-            logger.info(
-                "Database is already at the latest version. No migrations needed."
-            )
-    except Exception as e:
-        logger.error(f"CRITICAL: Database migration failed: {str(e)}")
-        logger.exception(e)
-        # Fail fast - don't start the API with an outdated database schema
-        raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
+        # Run database migrations
+        try:
+            migration_manager = AsyncMigrationManager()
+            current_version = await migration_manager.get_current_version()
+            logger.info(f"Current database version: {current_version}")
 
-    # Run podcast profile data migration (legacy strings -> Model registry)
-    try:
-        from open_notebook.podcasts.migration import migrate_podcast_profiles
+            if await migration_manager.needs_migration():
+                logger.warning("Database migrations are pending. Running migrations...")
+                await migration_manager.run_migration_up()
+                new_version = await migration_manager.get_current_version()
+                logger.success(
+                    f"Migrations completed successfully. Database is now at version {new_version}"
+                )
+            else:
+                logger.info(
+                    "Database is already at the latest version. No migrations needed."
+                )
+        except Exception as e:
+            logger.error(f"CRITICAL: Database migration failed: {str(e)}")
+            logger.exception(e)
+            # Fail fast - don't start the API with an outdated database schema
+            raise RuntimeError(f"Failed to run database migrations: {str(e)}") from e
 
-        await migrate_podcast_profiles()
-    except Exception as e:
-        logger.warning(f"Podcast profile migration encountered errors: {e}")
-        # Non-fatal: profiles can be migrated manually via UI
+        # Run podcast profile data migration (legacy strings -> Model registry)
+        try:
+            from open_notebook.podcasts.migration import migrate_podcast_profiles
 
-    logger.success("API initialization completed successfully")
+            await migrate_podcast_profiles()
+        except Exception as e:
+            logger.warning(f"Podcast profile migration encountered errors: {e}")
+            # Non-fatal: profiles can be migrated manually via UI
 
-    # Yield control to the application
-    yield
+        logger.success("API initialization completed successfully")
 
-    # Shutdown: cleanup if needed
-    logger.info("API shutdown complete")
+        # Yield control to the application
+        yield
+    finally:
+        if database_pool_started:
+            await close_database_pool()
+
+        # Shutdown: cleanup if needed
+        logger.info("API shutdown complete")
 
 
 app = FastAPI(

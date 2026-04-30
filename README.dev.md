@@ -19,7 +19,7 @@ uv sync
 ./dev-init.sh
 ```
 
-`./dev-init.sh` is the recommended day-to-day workflow on macOS/Linux for this repository. It prefers local non-Docker development, checks port conflicts, starts the API + worker + frontend, and auto-starts a local SurrealDB v2 binary if the database is not already reachable.
+`./dev-init.sh` is the recommended day-to-day workflow on macOS/Linux for this repository. It prefers local non-Docker development, checks port conflicts, starts the API + worker + frontend, and auto-starts a local SurrealDB 3.0.x binary if the database is not already reachable.
 
 ## Development Workflows
 
@@ -58,12 +58,12 @@ START_LOCAL_SURREAL=false ./dev-init.sh
 ### What This Does
 
 1. Loads `.env` from the project root
-2. Reuses an existing SurrealDB instance or auto-starts a local SurrealDB v2 binary on port 8000
+2. Reuses an existing SurrealDB instance or auto-starts a local SurrealDB 3.0.x binary on port 8000
 3. Starts the FastAPI backend on port 5055 and waits for `/api/auth/status`
 4. Starts the background worker (`surreal-commands-worker`)
 5. Starts the Next.js frontend on port 3000
 
-Important local dev note: this codebase still expects SurrealDB v2 syntax for older migrations. If you run the database manually, make sure it is a SurrealDB v2 binary.
+Important local dev note: this codebase now targets SurrealDB v3.0.5. If you run the database manually, make sure it is a SurrealDB 3.0.x binary.
 
 ### Individual Services
 
@@ -101,7 +101,7 @@ make stop-all
 - ❌ Doesn't test Docker build
 - ❌ Environment may differ from production
 - ❌ Requires local Python/Node setup
-- ❌ Requires a local SurrealDB v2 binary if you don't want to reuse an existing DB
+- ❌ Requires a local SurrealDB 3.0.x binary if you don't want to reuse an existing DB
 
 ### Authentication in local development
 
@@ -369,7 +369,7 @@ grep '^SURREAL_' .env
 lsof -i :8000
 
 # If using a local binary, confirm it is v2
-$HOME/Library/Caches/surrealdb/surreal_v2 version
+$HOME/Library/Caches/surrealdb/surreal_v3 version
 ```
 
 ### Docker Build Fails
@@ -438,7 +438,7 @@ See [docs/5-CONFIGURATION/](docs/5-CONFIGURATION/) for complete configuration gu
 ### Speed Up Local Development
 
 1. **Use `./dev-init.sh`** instead of Docker for daily work
-2. **Keep a SurrealDB v2 instance available** between sessions for faster restarts
+2. **Keep a SurrealDB 3.0.x instance available** between sessions for faster restarts
 3. **Use `make docker-build-local`** only when testing Dockerfile changes
 4. **Skip multi-platform builds** until ready to publish
 
