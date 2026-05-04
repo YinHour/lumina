@@ -1,0 +1,2 @@
+DEFINE FIELD IF NOT EXISTS hidden_sources ON TABLE notebook TYPE option<array<record<source>>> DEFAULT [];
+DEFINE FIELD IF NOT EXISTS hidden_notes ON TABLE notebook TYPE option<array<record<note>>> DEFAULT [];

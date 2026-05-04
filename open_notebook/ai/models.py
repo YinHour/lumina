@@ -117,29 +117,30 @@ class ModelManager:
         ]:
             raise ConfigurationError(f"Invalid model type: {model.type}")
 
-        # Build config from credential if linked, otherwise fall back to env vars
+        # Build config from credential if linked, otherwise fall back to default credential
         config: dict = {}
+        credential = None
         if model.credential:
             credential = await model.get_credential_obj()
-            if credential:
-                config = credential.to_esperanto_config()
-                logger.debug(
-                    f"Using credential '{credential.name}' for model {model.name}"
-                )
-            else:
+            if not credential:
                 logger.warning(
                     f"Model {model.id} has credential {model.credential} but it could not be loaded. "
-                    f"Falling back to env vars."
+                    f"Falling back to default credential."
                 )
-                # Fall back to env var provisioning
-                from open_notebook.ai.key_provider import provision_provider_keys
 
-                await provision_provider_keys(model.provider)
+        if not credential:
+            from open_notebook.domain.credential import Credential
+            credentials = await Credential.get_by_provider(model.provider)
+            if credentials:
+                credential = credentials[0]
+
+        if credential:
+            config.update(credential.to_esperanto_config())
+            logger.debug(
+                f"Using config from credential '{credential.name}' for model {model.name}"
+            )
         else:
-            # No credential linked - use env var fallback
-            from open_notebook.ai.key_provider import provision_provider_keys
-
-            await provision_provider_keys(model.provider)
+            logger.debug(f"No credential found for model {model.name}, falling back to environment variables.")
 
         # Merge any additional kwargs (e.g. temperature)
         config.update(kwargs)

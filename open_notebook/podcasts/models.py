@@ -18,14 +18,19 @@ async def _resolve_model_config(model_id: str) -> Tuple[str, str, dict]:
 
     model = await Model.get(model_id)
     config: dict = {}
+    credential = None
     if model.credential:
         credential = await model.get_credential_obj()
-        if credential:
-            config = credential.to_esperanto_config()
-    if not config:
-        from open_notebook.ai.key_provider import provision_provider_keys
+        
+    if not credential:
+        from open_notebook.domain.credential import Credential
+        credentials = await Credential.get_by_provider(model.provider)
+        if credentials:
+            credential = credentials[0]
+            
+    if credential:
+        config = credential.to_esperanto_config()
 
-        await provision_provider_keys(model.provider)
     return (model.provider, model.name, config)
 
 

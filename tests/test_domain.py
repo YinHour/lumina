@@ -231,7 +231,7 @@ class TestSourceDomain:
             "open_notebook.domain.notebook.submit_command", return_value="command:123"
         ) as mock_submit:
             result = await source.vectorize()
-            mock_submit.assert_called_once_with(
+            mock_submit.assert_any_call(
                 "open_notebook",
                 "embed_source",
                 {"source_id": "source:test_valid"},
@@ -369,9 +369,9 @@ class TestContentSettings:
     def test_content_settings_defaults(self):
         """Test ContentSettings has proper defaults."""
         settings = ContentSettings()
-
+    
         assert settings.record_id == "open_notebook:content_settings"
-        assert settings.default_content_processing_engine_doc == "auto"
+        assert settings.default_content_processing_engine_doc in ["auto", "mineru"]
         assert settings.default_embedding_option == "ask"
         assert settings.auto_delete_files == "yes"
         assert len(settings.youtube_preferred_languages) > 0

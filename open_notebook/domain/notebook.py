@@ -16,10 +16,13 @@ from open_notebook.exceptions import DatabaseOperationError, InvalidInputError
 class Notebook(ObjectModel):
     table_name: ClassVar[str] = "notebook"
     name: str
-    description: str
+    description: str = ""
     archived: Optional[bool] = False
     password: Optional[str] = None
     creator_name: Optional[str] = None
+    is_aggregated: Optional[bool] = False
+    hidden_sources: Optional[List[Any]] = Field(default_factory=list)
+    hidden_notes: Optional[List[Any]] = Field(default_factory=list)
 
     @field_validator("name")
     @classmethod
@@ -33,10 +36,12 @@ class Notebook(ObjectModel):
             srcs = await repo_query(
                 """
                 select * omit source.full_text from (
-                select in as source from reference where out=$id
-                fetch source
-            ) order by source.updated desc
-            """,
+                    select in as source from reference 
+                    where (out=$id OR out in (SELECT VALUE out FROM aggregates WHERE in = $id))
+                    AND in NOT IN (SELECT VALUE (hidden_sources ?? []) FROM $id)[0]
+                    fetch source
+                ) order by source.updated desc
+                """,
                 {"id": ensure_record_id(self.id)},
             )
             return [Source(**src["source"]) for src in srcs] if srcs else []
@@ -49,11 +54,13 @@ class Notebook(ObjectModel):
         try:
             srcs = await repo_query(
                 """
-            select * omit note.content, note.embedding from (
-                select in as note from artifact where out=$id
-                fetch note
-            ) order by note.updated desc
-            """,
+                select * omit note.content, note.embedding from (
+                    select in as note from artifact 
+                    where (out=$id OR out in (SELECT VALUE out FROM aggregates WHERE in = $id))
+                    AND in NOT IN (SELECT VALUE (hidden_notes ?? []) FROM $id)[0]
+                    fetch note
+                ) order by note.updated desc
+                """,
                 {"id": ensure_record_id(self.id)},
             )
             return [Note(**src["note"]) for src in srcs] if srcs else []
@@ -74,7 +81,7 @@ class Notebook(ObjectModel):
                     fetch chat_session
                 )
                 order by chat_session.updated desc
-            """,
+                """,
                 {"id": ensure_record_id(self.id)},
             )
             return (
@@ -157,8 +164,15 @@ class Notebook(ObjectModel):
             deleted_sources = 0
             unlinked_sources = 0
 
-            # 1. Get and delete all notes linked to this notebook
-            notes = await self.get_notes()
+            # 1. Get and delete all notes linked directly to this notebook
+            notes_records = await repo_query(
+                """
+                select in as note from artifact where out=$notebook_id
+                fetch note
+                """,
+                {"notebook_id": notebook_id},
+            )
+            notes = [Note(**n["note"]) for n in notes_records] if notes_records else []
             for note in notes:
                 await note.delete()
                 deleted_notes += 1
@@ -209,6 +223,12 @@ class Notebook(ObjectModel):
             # Delete reference relationships (unlink all sources)
             await repo_query(
                 "DELETE reference WHERE out = $notebook_id",
+                {"notebook_id": notebook_id},
+            )
+            
+            # Delete aggregates relationships
+            await repo_query(
+                "DELETE aggregates WHERE in = $notebook_id OR out = $notebook_id",
                 {"notebook_id": notebook_id},
             )
             logger.info(
@@ -579,7 +599,6 @@ class Source(ObjectModel):
             )
             
             # Delete associated knowledge graph entities and relations
-            import os
             if os.environ.get("ENABLE_KNOWLEDGE_GRAPH", "false").lower() == "true":
                 await repo_query(
                     "DELETE kg_entity WHERE source_id = $source_id_str",

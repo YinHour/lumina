@@ -1,0 +1,2 @@
+REMOVE FIELD IF EXISTS hidden_sources ON TABLE notebook;
+REMOVE FIELD IF EXISTS hidden_notes ON TABLE notebook;

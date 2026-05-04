@@ -17,10 +17,10 @@ database:
 
 run:
 	@echo "⚠️  Warning: Starting frontend only. For full functionality, use 'make start-all'"
-	cd frontend && npm run dev
+	cd frontend && npm run dev -- -H 0.0.0.0
 
 frontend:
-	cd frontend && npm run dev
+	cd frontend && npm run dev -- -H 0.0.0.0
 
 # Verify 参考文献 auto-numbering (run on your machine; requires Node/npm in PATH)
 frontend-test-bib:
@@ -160,7 +160,7 @@ worker-restart: worker-stop
 start-all:
 	@echo "🚀 Starting Open Notebook (Database + API + Worker + Frontend)..."
 	@echo "📊 Starting SurrealDB..."
-	@docker compose -f docker-compose.dev.yml up -d surrealdb
+	@docker compose -f docker-compose.yml up -d surrealdb
 	@sleep 3
 	@echo "🔧 Starting API backend..."
 	@uv run run_api.py &
@@ -173,7 +173,7 @@ start-all:
 	@echo "📱 Frontend: http://localhost:3000"
 	@echo "🔗 API: http://localhost:5055"
 	@echo "📚 API Docs: http://localhost:5055/docs"
-	cd frontend && npm run dev
+	cd frontend && npm run dev -- -H 0.0.0.0
 
 stop-all:
 	@echo "🛑 Stopping all Open Notebook services..."

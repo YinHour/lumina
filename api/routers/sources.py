@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uuid
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -39,7 +40,7 @@ router = APIRouter()
 
 
 def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
-    """Generate unique filename like Streamlit app (append counter if file exists)."""
+    """Generate unique filename using UUID to prevent TOCTOU race conditions."""
     file_path = Path(upload_folder)
     file_path.mkdir(parents=True, exist_ok=True)
 
@@ -48,26 +49,16 @@ def generate_unique_filename(original_filename: str, upload_folder: str) -> str:
     if not safe_filename:
         raise ValueError("Invalid filename")
 
-    # Split filename and extension
-    stem = Path(safe_filename).stem
     suffix = Path(safe_filename).suffix
+    new_filename = f"{uuid.uuid4().hex}{suffix}"
 
-    # Check if file exists and generate unique name
-    counter = 0
-    while True:
-        if counter == 0:
-            new_filename = safe_filename
-        else:
-            new_filename = f"{stem} ({counter}){suffix}"
-
-        full_path = file_path / new_filename
-        # Verify resolved path stays within upload folder
-        resolved = full_path.resolve()
-        if not str(resolved).startswith(str(file_path.resolve()) + os.sep):
-            raise ValueError("Invalid filename: path traversal detected")
-        if not resolved.exists():
-            return str(resolved)
-        counter += 1
+    full_path = file_path / new_filename
+    # Verify resolved path stays within upload folder
+    resolved = full_path.resolve()
+    if not str(resolved).startswith(str(file_path.resolve()) + os.sep):
+        raise ValueError("Invalid filename: path traversal detected")
+    
+    return str(resolved)
 
 
 async def save_uploaded_file(upload_file: UploadFile) -> str:
@@ -203,7 +194,10 @@ async def get_sources(
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
                 
-            conditions.append("id IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)")
+            if notebook.is_aggregated:
+                conditions.append("id IN (SELECT VALUE in FROM reference WHERE out = $notebook_id OR out IN (SELECT VALUE out FROM aggregates WHERE in = $notebook_id))")
+            else:
+                conditions.append("id IN (SELECT VALUE in FROM reference WHERE out = $notebook_id)")
             params["notebook_id"] = ensure_record_id(notebook_id)
 
         where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -347,6 +341,7 @@ async def create_source(
                 )
             content_state["file_path"] = final_file_path
             content_state["delete_source"] = source_data.delete_source
+            content_state["title"] = source_data.title or (upload_file.filename if upload_file else None)
         elif source_data.type == "text":
             if not source_data.content:
                 raise HTTPException(
@@ -410,7 +405,7 @@ async def create_source(
                 origin_notebook_id = source_data.notebooks[0]
 
             source = Source(
-                title=source_data.title or "Processing...",
+                title=source_data.title or (upload_file.filename if upload_file else "Processing..."),
                 topics=[],
                 asset=source_asset,
                 origin_notebook_id=origin_notebook_id,
@@ -496,7 +491,7 @@ async def create_source(
                     origin_notebook_id = source_data.notebooks[0]
 
                 source = Source(
-                    title=source_data.title or "Processing...",
+                    title=source_data.title or (upload_file.filename if upload_file else "Processing..."),
                     topics=[],
                     origin_notebook_id=origin_notebook_id,
                 )

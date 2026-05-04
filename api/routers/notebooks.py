@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from api.models import (
+    NotebookAggregateRequest,
     NotebookCreate,
     NotebookDeletePreview,
     NotebookDeleteResponse,
@@ -52,8 +53,19 @@ async def get_notebooks(
         # Build the query with counts
         query = f"""
             SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
+            (SELECT VALUE out.name FROM aggregates WHERE in = $parent.id) as aggregated_notebooks,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-reference.in, ->aggregates.out<-reference.in).flatten()),
+                    (hidden_sources ?? [])
+                )
+            ) as source_count,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-artifact.in, ->aggregates.out<-artifact.in).flatten()),
+                    (hidden_notes ?? [])
+                )
+            ) as note_count
             FROM notebook
             ORDER BY {validated_order_by}
         """
@@ -76,6 +88,8 @@ async def get_notebooks(
                 note_count=nb.get("note_count", 0),
                 password=nb.get("password"),
                 creator_name=nb.get("creator_name"),
+                is_aggregated=nb.get("is_aggregated", False),
+                aggregated_notebooks=nb.get("aggregated_notebooks", []),
             )
             for nb in result
         ]
@@ -111,6 +125,8 @@ async def create_notebook(notebook: NotebookCreate):
             note_count=0,  # New notebook has no notes
             password=new_notebook.password,
             creator_name=new_notebook.creator_name,
+            is_aggregated=new_notebook.is_aggregated or False,
+            aggregated_notebooks=[],
         )
     except InvalidInputError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -118,6 +134,96 @@ async def create_notebook(notebook: NotebookCreate):
         logger.error(f"Error creating notebook: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Error creating notebook: {str(e)}"
+        )
+
+
+@router.post("/notebooks/aggregate", response_model=NotebookResponse)
+async def aggregate_notebooks(request: NotebookAggregateRequest):
+    """Aggregate multiple notebooks into a new one."""
+    try:
+        # 1. Verify passwords and existence of all notebooks
+        notebooks_to_aggregate = []
+        for nb_id in request.notebook_ids:
+            nb = await Notebook.get(nb_id)
+            if not nb:
+                raise HTTPException(status_code=404, detail=f"Notebook {nb_id} not found")
+            
+            if nb.password:
+                provided_pwd = request.notebook_passwords.get(nb_id)
+                if not provided_pwd or provided_pwd != nb.password:
+                    raise HTTPException(
+                        status_code=403, 
+                        detail=f"Incorrect password for notebook: {nb.name}"
+                    )
+            notebooks_to_aggregate.append(nb)
+
+        # 2. Create the new notebook
+        new_notebook = Notebook(
+            name=request.name,
+            description=request.description,
+            password=request.password,
+            creator_name=request.creator_name,
+            is_aggregated=True,
+        )
+        await new_notebook.save()
+
+        # 3. Copy links for sources, notes, and chat sessions
+        new_nb_id = ensure_record_id(new_notebook.id)
+        
+        for nb in notebooks_to_aggregate:
+            old_nb_id = ensure_record_id(nb.id)
+            
+            await repo_query(
+                "RELATE $new_nb_id->aggregates->$old_nb_id;",
+                {"old_nb_id": old_nb_id, "new_nb_id": new_nb_id}
+            )
+
+        # 4. Return the new notebook
+        query = """
+            SELECT *,
+            (SELECT VALUE out.name FROM aggregates WHERE in = $parent.id) as aggregated_notebooks,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-reference.in, ->aggregates.out<-reference.in).flatten()),
+                    (hidden_sources ?? [])
+                )
+            ) as source_count,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-artifact.in, ->aggregates.out<-artifact.in).flatten()),
+                    (hidden_notes ?? [])
+                )
+            ) as note_count
+            FROM $notebook_id
+        """
+        result = await repo_query(query, {"notebook_id": new_nb_id})
+
+        if result:
+            nb_res = result[0]
+            return NotebookResponse(
+                id=str(nb_res.get("id", "")),
+                name=nb_res.get("name", ""),
+                description=nb_res.get("description", ""),
+                archived=nb_res.get("archived", False),
+                created=str(nb_res.get("created", "")),
+                updated=str(nb_res.get("updated", "")),
+                source_count=nb_res.get("source_count", 0),
+                note_count=nb_res.get("note_count", 0),
+                password=nb_res.get("password"),
+                creator_name=nb_res.get("creator_name"),
+                is_aggregated=nb_res.get("is_aggregated", False),
+            )
+            
+        raise HTTPException(status_code=500, detail="Error retrieving created notebook")
+        
+    except HTTPException:
+        raise
+    except InvalidInputError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error aggregating notebooks: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Error aggregating notebooks: {str(e)}"
         )
 
 
@@ -157,8 +263,19 @@ async def get_notebook(notebook_id: str):
         # Query with counts for single notebook
         query = """
             SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
+            (SELECT VALUE out.name FROM aggregates WHERE in = $parent.id) as aggregated_notebooks,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-reference.in, ->aggregates.out<-reference.in).flatten()),
+                    (hidden_sources ?? [])
+                )
+            ) as source_count,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-artifact.in, ->aggregates.out<-artifact.in).flatten()),
+                    (hidden_notes ?? [])
+                )
+            ) as note_count
             FROM $notebook_id
         """
         result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
@@ -178,6 +295,8 @@ async def get_notebook(notebook_id: str):
             note_count=nb.get("note_count", 0),
             password=nb.get("password"),
             creator_name=nb.get("creator_name"),
+            is_aggregated=nb.get("is_aggregated", False),
+            aggregated_notebooks=nb.get("aggregated_notebooks", []),
         )
     except HTTPException:
         raise
@@ -213,8 +332,19 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
         # Query with counts after update
         query = """
             SELECT *,
-            count(<-reference.in) as source_count,
-            count(<-artifact.in) as note_count
+            (SELECT VALUE out.name FROM aggregates WHERE in = $parent.id) as aggregated_notebooks,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-reference.in, ->aggregates.out<-reference.in).flatten()),
+                    (hidden_sources ?? [])
+                )
+            ) as source_count,
+            array::len(
+                array::difference(
+                    array::distinct(array::concat(<-artifact.in, ->aggregates.out<-artifact.in).flatten()),
+                    (hidden_notes ?? [])
+                )
+            ) as note_count
             FROM $notebook_id
         """
         result = await repo_query(query, {"notebook_id": ensure_record_id(notebook_id)})
@@ -232,6 +362,8 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
                 note_count=nb.get("note_count", 0),
                 password=nb.get("password"),
                 creator_name=nb.get("creator_name"),
+                is_aggregated=nb.get("is_aggregated", False),
+                aggregated_notebooks=nb.get("aggregated_notebooks", []),
             )
 
         # Fallback if query fails
@@ -246,6 +378,8 @@ async def update_notebook(notebook_id: str, notebook_update: NotebookUpdate):
             note_count=0,
             password=notebook.password,
             creator_name=notebook.creator_name,
+            is_aggregated=notebook.is_aggregated or False,
+            aggregated_notebooks=notebook.get("aggregated_notebooks", []) if hasattr(notebook, "get") else [],
         )
     except HTTPException:
         raise
@@ -266,6 +400,16 @@ async def add_source_to_notebook(notebook_id: str, source_id: str):
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
+
+        if notebook.is_aggregated:
+            # If adding back to aggregated, we must unhide it
+            await repo_query(
+                "UPDATE $notebook_id SET hidden_sources = array::difference(hidden_sources, [$source_id])",
+                {
+                    "notebook_id": ensure_record_id(notebook_id),
+                    "source_id": ensure_record_id(source_id),
+                },
+            )
 
         # Check if source exists
         source = await Source.get(source_id)
@@ -311,6 +455,16 @@ async def remove_source_from_notebook(notebook_id: str, source_id: str):
         notebook = await Notebook.get(notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
+
+        if notebook.is_aggregated:
+            # If removing from aggregated, we must hide it so dynamic view stops showing it
+            await repo_query(
+                "UPDATE $notebook_id SET hidden_sources = array::union(hidden_sources, [$source_id])",
+                {
+                    "notebook_id": ensure_record_id(notebook_id),
+                    "source_id": ensure_record_id(source_id),
+                },
+            )
 
         # Delete the reference record linking source to notebook
         await repo_query(

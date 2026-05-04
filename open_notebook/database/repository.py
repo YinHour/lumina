@@ -15,7 +15,7 @@ T = TypeVar("T", Dict[str, Any], List[Dict[str, Any]])
 DEFAULT_SURREAL_POOL_SIZE = 10
 DEFAULT_SURREAL_POOL_ACQUIRE_TIMEOUT = 5.0
 DEFAULT_SURREAL_QUERY_TIMEOUT = 30.0
-DEFAULT_SURREAL_TRANSACTION_RETRY_ATTEMPTS = 3
+DEFAULT_SURREAL_TRANSACTION_RETRY_ATTEMPTS = 10
 
 
 class DatabaseConnectionPool:
@@ -256,6 +256,10 @@ async def repo_query(
             )
             if isinstance(result, str):
                 raise RuntimeError(result)
+            if isinstance(result, list):
+                for item in result:
+                    if isinstance(item, dict) and item.get("status") == "ERR":
+                        raise RuntimeError(item.get("detail", "Unknown SurrealDB error"))
             return result
         except RuntimeError as e:
             # RuntimeError is raised for retriable transaction conflicts - log at debug to avoid noise
@@ -302,14 +306,9 @@ async def repo_create(table: str, data: Dict[str, Any]) -> Dict[str, Any]:
     data["created"] = datetime.now(timezone.utc)
     data["updated"] = datetime.now(timezone.utc)
     try:
-        async with db_connection() as connection:
-            result = parse_record_ids(
-                await _run_with_query_timeout(connection.insert(table, data))
-            )
-            # SurrealDB may return a string error message instead of the expected record
-            if isinstance(result, str):
-                raise RuntimeError(result)
-            return result
+        query = f"CREATE {table} CONTENT $data;"
+        result = await repo_transaction(query, {"data": data})
+        return parse_record_ids(result)
     except RuntimeError as e:
         logger.error(str(e))
         raise
@@ -327,7 +326,7 @@ async def repo_relate(
     query = f"RELATE {source}->{relationship}->{target} CONTENT $data;"
     # logger.debug(f"Relate query: {query}")
 
-    return await repo_query(
+    return await repo_transaction(
         query,
         {
             "data": data,
@@ -343,7 +342,7 @@ async def repo_upsert(
     if add_timestamp:
         data["updated"] = datetime.now(timezone.utc)
     query = f"UPSERT {id if id else table} MERGE $data;"
-    return await repo_query(query, {"data": data})
+    return await repo_transaction(query, {"data": data})
 
 
 async def repo_update(
@@ -362,7 +361,7 @@ async def repo_update(
         data["updated"] = datetime.now(timezone.utc)
         query = f"UPDATE {record_id} MERGE $data;"
         # logger.debug(f"Update query: {query}")
-        result = await repo_query(query, {"data": data})
+        result = await repo_transaction(query, {"data": data})
         # if isinstance(result, list):
         #     return [_return_data(item) for item in result]
         return parse_record_ids(result)

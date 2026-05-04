@@ -32,7 +32,17 @@ class NotebookResponse(BaseModel):
     note_count: int
     password: Optional[str] = None
     creator_name: Optional[str] = None
+    is_aggregated: bool = False
+    aggregated_notebooks: Optional[List[str]] = None
 
+
+class NotebookAggregateRequest(BaseModel):
+    name: str = Field(..., description="Name of the new notebook")
+    description: str = Field(default="", description="Description of the new notebook")
+    password: Optional[str] = Field(None, description="Password for the new notebook")
+    creator_name: Optional[str] = Field(None, description="Creator name for the new notebook")
+    notebook_ids: List[str] = Field(..., description="IDs of the notebooks to aggregate")
+    notebook_passwords: Dict[str, str] = Field(default_factory=dict, description="Passwords for the selected notebooks")
 
 # Search models
 class SearchRequest(BaseModel):
