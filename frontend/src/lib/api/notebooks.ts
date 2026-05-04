@@ -3,6 +3,7 @@ import {
   NotebookResponse,
   CreateNotebookRequest,
   UpdateNotebookRequest,
+  NotebookAggregateRequest,
   NotebookDeletePreview,
   NotebookDeleteResponse,
 } from '@/lib/types/api'
@@ -20,6 +21,11 @@ export const notebooksApi = {
 
   create: async (data: CreateNotebookRequest) => {
     const response = await apiClient.post<NotebookResponse>('/notebooks', data)
+    return response.data
+  },
+
+  aggregate: async (data: NotebookAggregateRequest) => {
+    const response = await apiClient.post<NotebookResponse>('/notebooks/aggregate', data)
     return response.data
   },
 

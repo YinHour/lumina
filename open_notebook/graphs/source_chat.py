@@ -1,19 +1,20 @@
 import asyncio
-import sqlite3
 from typing import Annotated, Dict, List, Optional
 
 from ai_prompter import Prompter
 from langchain_core.messages import AIMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
+from loguru import logger
 from typing_extensions import TypedDict
 
 from open_notebook.ai.provision import provision_langchain_model
-from open_notebook.config import LANGGRAPH_CHECKPOINT_FILE
 from open_notebook.domain.notebook import Source, SourceInsight
 from open_notebook.exceptions import OpenNotebookError
+from open_notebook.graphs.tools import tavily_search
 from open_notebook.utils import clean_thinking_content
 from open_notebook.utils.context_builder import ContextBuilder, ContextConfig
 from open_notebook.utils.error_classifier import classify_error
@@ -50,7 +51,6 @@ async def call_model_with_source_context(
     except Exception as e:
         error_class, user_message = classify_error(e)
         import traceback
-        from loguru import logger
         logger.error(f"Error in source chat streaming: {str(e)}\n{traceback.format_exc()}")
         raise error_class(user_message) from e
 
@@ -218,17 +218,7 @@ def _format_source_context(context_data: Dict) -> str:
     return "\n".join(context_parts)
 
 
-# Create SQLite checkpointer
-conn = sqlite3.connect(
-    LANGGRAPH_CHECKPOINT_FILE,
-    check_same_thread=False,
-)
-memory = SqliteSaver(conn)
-
-from langgraph.prebuilt import ToolNode, tools_condition
-from open_notebook.graphs.tools import tavily_search
-
-# Create ToolNode
+# Create ToolNode (imported at top of file)
 tool_node = ToolNode([tavily_search])
 
 # Create the StateGraph
@@ -239,4 +229,7 @@ source_chat_state.add_node("tools", tool_node)
 source_chat_state.add_edge(START, "source_chat_agent")
 source_chat_state.add_conditional_edges("source_chat_agent", tools_condition)
 source_chat_state.add_edge("tools", "source_chat_agent")
+# Module-level: use MemorySaver (not SqliteSaver) to avoid concurrent sqlite write conflicts.
+# The router (api/routers/source_chat.py) uses its own AsyncSqliteSaver with a separate file.
+memory = MemorySaver()
 source_chat_graph = source_chat_state.compile(checkpointer=memory)

@@ -621,7 +621,7 @@ export default function SearchPage() {
                                     {t.searchPage.matches.replace('{count}', result.matches.length.toString())}
                                   </CollapsibleTrigger>
                                   <CollapsibleContent className="mt-2 space-y-1">
-                                    {result.matches.map((match, i) => (
+                                    {result.matches.map((match: any, i: number) => (
                                       <div key={i} className="text-sm pl-6 py-1 border-l-2 border-muted">
                                         {match}
                                       </div>

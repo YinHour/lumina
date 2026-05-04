@@ -106,6 +106,17 @@ export function NotebookCard({ notebook }: NotebookCardProps) {
               {notebook.description || t.chat.noDescription}
             </CardDescription>
 
+            {notebook.is_aggregated && notebook.aggregated_notebooks && notebook.aggregated_notebooks.length > 0 && (
+              <div className="mt-2 text-xs text-muted-foreground flex flex-wrap gap-1">
+                <span className="font-medium">关联:</span>
+                {notebook.aggregated_notebooks.map((name, i) => (
+                  <Badge key={i} variant="secondary" className="px-1.5 py-0 text-[10px]">
+                    {name}
+                  </Badge>
+                ))}
+              </div>
+            )}
+
             <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
               <span>
                 {t.common.updated.replace('{time}', formatDistanceToNow(new Date(notebook.updated), { 

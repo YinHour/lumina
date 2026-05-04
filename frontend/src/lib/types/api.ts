@@ -9,6 +9,8 @@ export interface NotebookResponse {
   note_count: number
   password?: string | null
   creator_name?: string | null
+  is_aggregated: boolean
+  aggregated_notebooks?: string[]
 }
 
 export interface NoteResponse {
@@ -72,6 +74,15 @@ export interface CreateNotebookRequest {
   description?: string
   password?: string
   creator_name?: string
+}
+
+export interface NotebookAggregateRequest {
+  name: string
+  description?: string
+  password?: string
+  creator_name?: string
+  notebook_ids: string[]
+  notebook_passwords: Record<string, string>
 }
 
 export interface UpdateNotebookRequest {

@@ -14,6 +14,7 @@ interface NotebookListProps {
   isLoading: boolean
   title: string
   collapsible?: boolean
+  defaultExpanded?: boolean
   emptyTitle?: string
   emptyDescription?: string
   onAction?: () => void
@@ -25,13 +26,14 @@ export function NotebookList({
   isLoading, 
   title, 
   collapsible = false,
+  defaultExpanded = false,
   emptyTitle,
   emptyDescription,
   onAction,
   actionLabel,
 }: NotebookListProps) {
   const { t } = useTranslation()
-  const [isExpanded, setIsExpanded] = useState(!collapsible)
+  const [isExpanded, setIsExpanded] = useState(!collapsible || defaultExpanded)
 
   if (isLoading) {
     return (

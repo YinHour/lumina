@@ -10,10 +10,13 @@ import { useNotebooks } from '@/lib/hooks/use-notebooks'
 import { CreateNotebookDialog } from '@/components/notebooks/CreateNotebookDialog'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { AggregateNotebookDialog } from '@/components/notebooks/AggregateNotebookDialog'
+import { Layers } from 'lucide-react'
 
 export default function NotebooksPage() {
   const { t } = useTranslation()
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [aggregateDialogOpen, setAggregateDialogOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const { data: notebooks, isLoading, refetch } = useNotebooks(false)
   const { data: archivedNotebooks } = useNotebooks(true)
@@ -24,10 +27,24 @@ export default function NotebooksPage() {
     if (!notebooks) {
       return undefined
     }
+    const regularNotebooks = notebooks.filter(nb => !nb.is_aggregated)
     if (!normalizedQuery) {
-      return notebooks
+      return regularNotebooks
     }
-    return notebooks.filter((notebook) =>
+    return regularNotebooks.filter((notebook) =>
+      notebook.name.toLowerCase().includes(normalizedQuery)
+    )
+  }, [notebooks, normalizedQuery])
+
+  const filteredAggregated = useMemo(() => {
+    if (!notebooks) {
+      return undefined
+    }
+    const aggregatedNotebooks = notebooks.filter(nb => nb.is_aggregated)
+    if (!normalizedQuery) {
+      return aggregatedNotebooks
+    }
+    return aggregatedNotebooks.filter((notebook) =>
       notebook.name.toLowerCase().includes(normalizedQuery)
     )
   }, [notebooks, normalizedQuery])
@@ -69,6 +86,10 @@ export default function NotebooksPage() {
               aria-label={t.common.accessibility?.searchNotebooks || "Search notebooks"}
               className="w-full sm:w-64"
             />
+            <Button variant="outline" onClick={() => setAggregateDialogOpen(true)}>
+              <Layers className="h-4 w-4 mr-2" />
+              聚合笔记本
+            </Button>
             <Button onClick={() => setCreateDialogOpen(true)}>
               <Plus className="h-4 w-4 mr-2" />
               {t.notebooks.newNotebook}
@@ -86,6 +107,18 @@ export default function NotebooksPage() {
             onAction={!isSearching ? () => setCreateDialogOpen(true) : undefined}
             actionLabel={!isSearching ? t.notebooks.newNotebook : undefined}
           />
+
+          {(filteredAggregated && filteredAggregated.length > 0) && (
+            <NotebookList 
+              notebooks={filteredAggregated} 
+              isLoading={isLoading}
+              title="聚合的笔记本"
+              collapsible
+              defaultExpanded
+              emptyTitle={isSearching ? t.common.noMatches : undefined}
+              emptyDescription={isSearching ? t.common.tryDifferentSearch : undefined}
+            />
+          )}
           
           {hasArchived && (
             <NotebookList 
@@ -104,6 +137,10 @@ export default function NotebooksPage() {
       <CreateNotebookDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
+      />
+      <AggregateNotebookDialog
+        open={aggregateDialogOpen}
+        onOpenChange={setAggregateDialogOpen}
       />
     </AppShell>
   )
