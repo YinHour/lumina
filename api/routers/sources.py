@@ -174,8 +174,8 @@ async def get_sources(
                 status_code=400, detail="sort_order must be 'asc' or 'desc'"
             )
 
-        # Build ORDER BY clause
-        order_clause = f"ORDER BY {sort_by} {sort_order.upper()}"
+        # Build ORDER BY clause - append 'id ASC' to ensure deterministic sorting for pagination
+        order_clause = f"ORDER BY {sort_by} {sort_order.upper()}, id ASC"
         
         # Build conditions and parameters
         conditions = []
